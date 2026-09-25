@@ -1,3 +1,4 @@
+from app.application.challenges.access import ChallengeAccessService
 from app.application.challenges.models import (
     RunChallengeCommand,
     RunChallengeResult,
@@ -18,17 +19,20 @@ class RunChallengeUseCase:
         challenge_reader: ChallengeReader,
         llm_provider: LLMProvider,
         evaluation_engine: EvaluationEngine,
+        access_service: ChallengeAccessService,
     ) -> None:
         self._challenge_reader = challenge_reader
         self._llm_provider = llm_provider
         self._evaluation_engine = evaluation_engine
+        self._access_service = access_service
 
     async def execute(self, command: RunChallengeCommand) -> RunChallengeResult:
-        playable = self._challenge_reader.get_by_slug(command.challenge_slug)
+        playable = await self._challenge_reader.get_by_slug(command.challenge_slug)
         if playable is None:
             raise ChallengeNotFoundError(
                 f"Published challenge '{command.challenge_slug}' was not found."
             )
+        await self._access_service.require_access(playable, command.owner_user_id)
 
         version = playable.version
         outputs = {}

@@ -4,11 +4,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_run_challenge_use_case
+from app.application.challenges.access import ChallengeAccessService
 from app.application.challenges.run_challenge import RunChallengeUseCase
 from app.core.exceptions import LLMRateLimitError
 from app.domains.evaluation.engine import EvaluationEngine
 from app.domains.evaluation.model_execution import LLMExecutionRequest, LLMExecutionResult
 from app.infrastructure.challenges.in_memory_repository import InMemoryChallengeRepository
+from app.infrastructure.submissions import InMemorySubmissionRepository
 from app.main import app
 from tests.fakes.llm import FakeLLMProvider
 
@@ -23,10 +25,15 @@ def make_use_case(
     provider: FakeLLMProvider | RateLimitedProvider,
     repository: InMemoryChallengeRepository | None = None,
 ) -> RunChallengeUseCase:
+    challenge_reader = repository or InMemoryChallengeRepository()
     return RunChallengeUseCase(
-        challenge_reader=repository or InMemoryChallengeRepository(),
+        challenge_reader=challenge_reader,
         llm_provider=provider,
         evaluation_engine=EvaluationEngine.with_builtin_graders(),
+        access_service=ChallengeAccessService(
+            challenge_reader,
+            InMemorySubmissionRepository(),
+        ),
     )
 
 

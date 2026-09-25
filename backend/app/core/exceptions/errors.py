@@ -39,3 +39,25 @@ class LLMTimeoutError(LLMProviderError):
 
 class LLMMalformedResponseError(LLMProviderError):
     code = "llm_malformed_response"
+
+
+class PersistenceError(DomainError):
+    code = "persistence_error"
+
+
+class AuthenticationError(DomainError):
+    code = "authentication_error"
+
+    def __init__(self, message: str = "Valid bearer authentication is required.") -> None:
+        super().__init__(message)
+
+
+class AuthenticationServiceError(DomainError):
+    code = "authentication_service_error"
+
+    def __init__(self, message: str = "Authentication verification is unavailable.") -> None:
+        super().__init__(message)
+
+
+class AuthorizationError(DomainError):
+    code = "authorization_error"

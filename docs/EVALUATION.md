@@ -1,10 +1,12 @@
 # Evaluation
 
-Evaluation will implement the product's Write → Run → Submit loop while enforcing a strict trust boundary.
+Evaluation implements the prototype's Write → Run → Submit loop while enforcing a strict trust boundary.
 
 ## Run
 
 `RUN` is implemented as an application use case. `RunChallengeUseCase` retrieves a published `PlayableChallenge` through the minimal `ChallengeReader` port, executes each `VisibleTestCase` independently through `LLMProvider`, associates generated text by test ID, and delegates all grading and aggregation to `EvaluationEngine`.
+
+Before execution, Run applies the same derived challenge-access policy as detail and Submit. Anonymous players may run the first CONTROL challenge. Later challenges require authentication and completion of the preceding challenge; locked requests make no provider calls.
 
 The three prototype tests execute sequentially for deterministic, easy-to-debug behavior. If a provider call fails, Run stops and propagates the project-owned provider error; infrastructure failure is never converted into a wrong player answer. Because visible examples are already public, the purpose-built Run response includes test inputs, model outputs, expected outputs, and stable failure reasons. This mode supports iteration and is not an authoritative score.
 
@@ -12,14 +14,18 @@ The initial in-memory challenge records a prompt hard limit, but the use case do
 
 ## Submit
 
-`SUBMIT` evaluates the prompt against hidden tests stored and loaded only on trusted server infrastructure. The browser sends the prompt, but never receives hidden inputs, expected outputs, database records, or revealing grader configuration. The evaluation use case returns only a purpose-built sanitized result such as aggregate tests passed, accuracy, efficiency, and final score.
+`SUBMIT` is implemented as a separate application use case. `SubmitChallengeUseCase` retrieves the same published challenge through `ChallengeReader`, then requests a server-only `HiddenTestSuite` through `HiddenTestSuiteReader` using the exact `ChallengeVersion` ID. It rejects a missing suite or a suite whose version does not match before model execution begins.
+
+Each CONTROL challenge has six deterministic hidden cases. Each case is executed independently and sequentially through `LLMProvider`, then the existing `EvaluationEngine` grades outputs associated by test ID. Provider failures stop the submission and propagate as project-owned execution errors; they are not converted into failed tests or partial accuracy. Submit checks access before token counting, hidden-suite loading, or provider execution.
+
+The browser receives only `SubmitChallengeResult` mapped to `SubmitChallengeResponse`: challenge slug, version, passed count, total count, accuracy, player prompt tokens, efficiency, final score, and stars. These types contain no per-test collection or fields for hidden IDs, inputs, expected outputs, actual outputs, grader configuration, or provider metadata. Detailed `EvaluationResult` data remains internal.
 
 The intended flow is:
 
 ```text
-Browser → FastAPI → Evaluation use case → LLMProvider
-                                      ↘ server-only test repository
-                    grader → scorer → sanitized response → Browser
+Browser → FastAPI → Submit use case → LLMProvider
+                                  ↘ server-only hidden-suite reader
+                    grader → aggregate sanitizer → Browser
 ```
 
 DTOs for public challenge data, visible run results, internal evaluation data, and submitted results must be distinct. Do not reuse an internal persistence model as an API response. This makes accidental hidden-test serialization difficult.
@@ -29,11 +35,11 @@ The implemented domain makes the distinction explicit:
 - `VisibleExample` is explanatory challenge content and is never implicitly executable.
 - `VisibleTestCase` is executable Run data that may support detailed feedback.
 - `HiddenTestCase` and `HiddenTestSuite` are server-only types. A suite is linked to an exact `ChallengeVersion` ID and is deliberately not a field on `ChallengeVersion`.
-- `TestEvaluationResult` and `EvaluationResult` are internal outcomes. A future Submit API must map them to a separate aggregate-only response rather than serialize them directly.
+- `TestEvaluationResult` and `EvaluationResult` are internal outcomes. Submit maps their aggregates to a separate result and response rather than serializing them directly.
 
 ## Model execution
 
-LLM execution and deterministic grading are separate operations. The asynchronous `LLMProvider` port executes one `LLMExecutionRequest`; `EvaluationEngine` grades the returned text later and never calls a provider itself. `RunChallengeUseCase` composes these two steps without importing Groq, FastAPI, or the hidden-test types. A future Submit use case will provide its own server-only orchestration and sanitized response.
+LLM execution and deterministic grading are separate operations. The asynchronous `LLMProvider` port executes one `LLMExecutionRequest`; `EvaluationEngine` grades the returned text later and never calls a provider itself. `RunChallengeUseCase` and `SubmitChallengeUseCase` compose these steps independently without importing Groq or FastAPI. Only Submit depends on the server-only hidden-suite port.
 
 `LLMExecutionRequest` keeps the player-authored prompt, test-case input, and immutable challenge `ModelConfiguration` as distinct fields. `GroqProvider` constructs chat messages in this exact order:
 
@@ -68,6 +74,29 @@ Safe diagnostics provide only a stable code and safe message: they have no gener
 
 Each `ChallengeVersion` records a provider-neutral `ModelConfiguration`, a default `EvaluationConfiguration`, and a validated `ScoringConfiguration`. Every executable test also carries its effective grader configuration explicitly, allowing future per-case strategies without relying on implicit mutable state.
 
-Scoring will be pure domain logic with challenge-specific configuration. `ScoringConfiguration` records accuracy/efficiency weights, token-based `EfficiencyThresholds`, and `StarThresholds`, but no scoring or star-award algorithm exists yet. The challenge's `prompt_token_limit` is a separate hard admission constraint and is not treated as an efficiency threshold.
+Scoring is pure domain logic with challenge-specific configuration. `ScoringConfiguration` records accuracy/efficiency weights, token-based `EfficiencyThresholds`, and `StarThresholds`. The challenge's `prompt_token_limit` is a separate hard admission constraint and is not treated as an efficiency threshold.
+
+## Token counting and scoring
+
+Submit performs scoring in this exact order:
+
+1. load the published challenge version;
+2. count only the player's authored prompt with the model-compatible local tokenizer;
+3. reject the request before hidden-suite loading or model execution if the prompt exceeds the hard limit;
+4. load and verify the exact hidden suite;
+5. execute and deterministically grade the hidden cases;
+6. use aggregate accuracy plus prompt token count and the challenge's scoring configuration to calculate efficiency, final score, and stars;
+7. atomically persist the owned submission, update challenge progress, and append newly earned XP milestones;
+8. map scoring and safe progression aggregates to the sanitized response.
+
+Persistence happens only after complete evaluation and scoring. Provider failures and prompt validation failures save nothing. Submission, progress, and XP changes commit in one transaction; a failure prevents a success response. Submission rows store reproducibility metadata and aggregate scores, but not hidden inputs, expected outputs, or actual model outputs. Attempts count completed authoritative evaluations, including zero-star results. Completion is set once when stars first reach one; best score and its submission are score-driven, while best stars are tracked independently and never decrease.
+
+`PromptTokenCounter` is a provider-neutral port. The current adapter uses OpenAI's authoritative `o200k_harmony` ordinary-text encoding for `openai/gpt-oss-20b`, backed by a local, SHA-256-verified copy of the official vocabulary. It performs no network request during counting. Provider usage is deliberately ignored because it includes system and test-input tokens.
+
+`EfficiencyThresholds` is an ordered set of inclusive token ceilings. The prototype challenge uses `≤60 → 100`, `≤100 → 90`, `≤150 → 75`, `≤250 → 60`, and `>250 → 40`. Its separate prompt hard limit is 300 tokens.
+
+`ScoringService` calculates `accuracy × accuracy_weight + efficiency × efficiency_weight`. The final score uses decimal arithmetic and rounds once to two decimal places with round-half-up semantics. Accuracy and efficiency remain on a 0–100 scale.
+
+Stars are accuracy-gated and challenge-specific: zero below the one-star threshold, one at the one-star threshold, two at the two-star threshold, and three only at the three-star accuracy threshold when the optional three-star prompt-token ceiling is also met. The prototype uses 70, 90, and 100 percent accuracy, with at most 60 player-prompt tokens required for three stars.
 
 Tests for evaluation will use deterministic fake providers. They must never invoke Groq or another external model service.

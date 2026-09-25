@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from app.application.challenges.access import ChallengeAccessService
 from app.application.challenges.models import RunChallengeCommand
 from app.application.challenges.run_challenge import RunChallengeUseCase
 from app.core.exceptions import LLMProviderError
@@ -13,6 +14,7 @@ from app.infrastructure.challenges.in_memory_repository import (
     EXACT_OUTPUT_CHALLENGE,
     InMemoryChallengeRepository,
 )
+from app.infrastructure.submissions import InMemorySubmissionRepository
 from tests.fakes.llm import FakeLLMProvider
 
 
@@ -21,9 +23,12 @@ class TrackingChallengeReader:
         self.playable = playable
         self.requested_slugs: list[str] = []
 
-    def get_by_slug(self, slug: str) -> PlayableChallenge | None:
+    async def get_by_slug(self, slug: str) -> PlayableChallenge | None:
         self.requested_slugs.append(slug)
         return self.playable
+
+    async def list_published(self, _track=None) -> tuple[PlayableChallenge, ...]:
+        return (self.playable,) if self.playable is not None else ()
 
 
 class FailingProvider:
@@ -40,19 +45,21 @@ def use_case(reader: TrackingChallengeReader, provider: FakeLLMProvider) -> RunC
         challenge_reader=reader,
         llm_provider=provider,
         evaluation_engine=EvaluationEngine.with_builtin_graders(),
+        access_service=ChallengeAccessService(reader, InMemorySubmissionRepository()),
     )
 
 
 def test_repository_contains_one_published_control_challenge_with_three_visible_tests() -> None:
     repository = InMemoryChallengeRepository()
-    playable = repository.get_by_slug("exact-output")
+    playable = asyncio.run(repository.get_by_slug("exact-output"))
 
     assert playable is EXACT_OUTPUT_CHALLENGE
     assert playable.version.publication_state is PublicationState.PUBLISHED
     assert playable.challenge.track.value == "control"
     assert len(playable.version.visible_test_cases) == 3
     assert not hasattr(playable.version, "hidden_test_cases")
-    assert repository.get_by_slug("another-challenge") is None
+    assert asyncio.run(repository.get_by_slug("another-challenge")) is None
+    assert len(asyncio.run(repository.list_published())) == 5
 
 
 def test_run_executes_visible_tests_independently_and_grades_by_id() -> None:
@@ -117,10 +124,12 @@ def test_unknown_challenge_fails_before_model_execution() -> None:
 
 def test_provider_failure_propagates_instead_of_becoming_a_failed_answer() -> None:
     provider = FailingProvider()
+    reader = TrackingChallengeReader(EXACT_OUTPUT_CHALLENGE)
     runner = RunChallengeUseCase(
-        challenge_reader=TrackingChallengeReader(EXACT_OUTPUT_CHALLENGE),
+        challenge_reader=reader,
         llm_provider=provider,
         evaluation_engine=EvaluationEngine.with_builtin_graders(),
+        access_service=ChallengeAccessService(reader, InMemorySubmissionRepository()),
     )
 
     with pytest.raises(LLMProviderError, match="provider request failed"):

@@ -15,3 +15,116 @@ body {
   margin: 0;
 }
 
+button,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 1px solid #52525b;
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.9rem;
+  background: #27272a;
+  color: #fafafa;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.harness {
+  width: min(900px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0 4rem;
+}
+
+.eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #a1a1aa;
+}
+
+.panel,
+.result-panel {
+  margin-top: 1.5rem;
+  border: 1px solid #3f3f46;
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  background: #18181b;
+}
+
+.panel label,
+.panel textarea {
+  display: block;
+  width: 100%;
+}
+
+.panel label {
+  margin-top: 1.25rem;
+  margin-bottom: 0.45rem;
+  font-weight: 700;
+}
+
+.panel textarea {
+  resize: vertical;
+  border: 1px solid #52525b;
+  border-radius: 0.4rem;
+  padding: 0.75rem;
+  background: #09090b;
+  color: #fafafa;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.error {
+  margin-top: 1.5rem;
+  border: 1px solid #b91c1c;
+  padding: 0.8rem;
+  color: #fecaca;
+}
+
+.test-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.test-result {
+  border-top: 1px solid #3f3f46;
+}
+
+.test-result dl,
+.score-grid {
+  display: grid;
+  gap: 0.4rem 1rem;
+}
+
+.test-result dl {
+  grid-template-columns: 7rem 1fr;
+}
+
+.test-result dt,
+.score-grid dt {
+  color: #a1a1aa;
+}
+
+.test-result dd,
+.score-grid dd {
+  margin: 0;
+}
+
+.score-grid {
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}
+
+.score-grid div {
+  border: 1px solid #3f3f46;
+  padding: 0.75rem;
+}

@@ -19,6 +19,7 @@ from app.domains.evaluation.configuration import (
 from app.domains.evaluation.test_cases import HiddenTestCase, HiddenTestSuite, VisibleTestCase
 from app.domains.scoring.configuration import (
     EfficiencyThresholds,
+    EfficiencyTier,
     ScoringConfiguration,
     StarThresholds,
 )
@@ -29,8 +30,8 @@ def scoring_config() -> ScoringConfiguration:
         accuracy_weight=0.8,
         efficiency_weight=0.2,
         efficiency_thresholds=EfficiencyThresholds(
-            full_credit_at_or_below=50,
-            no_credit_at_or_above=200,
+            tiers=(EfficiencyTier(max_tokens=50, score=100), EfficiencyTier(200, 40)),
+            score_above_max=20,
         ),
         star_thresholds=StarThresholds(one_star=50, two_stars=75, three_stars=90),
     )

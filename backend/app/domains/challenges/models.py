@@ -127,7 +127,7 @@ class ChallengeVersion:
             raise ChallengeDefinitionError("Prompt token limit must be positive when provided.")
         if (
             self.prompt_token_limit is not None
-            and self.scoring_config.efficiency_thresholds.no_credit_at_or_above
+            and self.scoring_config.efficiency_thresholds.tiers[-1].max_tokens
             > self.prompt_token_limit
         ):
             raise ChallengeDefinitionError(
