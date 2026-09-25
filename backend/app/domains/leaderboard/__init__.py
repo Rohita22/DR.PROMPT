@@ -1,0 +1,1 @@
+"""Challenge leaderboard behavior (future)."""
