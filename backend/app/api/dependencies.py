@@ -1,42 +1,100 @@
+import secrets
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import Depends, Security
+from fastapi import Depends, Header, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.admin import (
+    AdminChallengeRepository,
+    CreateChallengeUseCase,
+    CreateChallengeVersionUseCase,
+    GetAdminChallengeUseCase,
+    ListAdminChallengesUseCase,
+    PublishChallengeUseCase,
+    TestChallengeUseCase,
+    UnpublishChallengeUseCase,
+    UpdateChallengeDraftUseCase,
+)
 from app.application.auth import ResolveAuthenticatedUserUseCase
 from app.application.challenges import (
     ChallengeAccessService,
     GetChallengeDetailUseCase,
+    GetStarterPreviewUseCase,
     ListChallengesUseCase,
+)
+from app.application.challenges.execution_guard import (
+    ApplicationExecutionService,
+    ApplicationSubmissionRepository,
 )
 from app.application.challenges.run_challenge import RunChallengeUseCase
 from app.application.challenges.submit_challenge import SubmitChallengeUseCase
+from app.application.leaderboard import GetChallengeLeaderboardUseCase
+from app.application.profile import GetCurrentUserProfileUseCase
 from app.application.progression import GetUserProgressUseCase
 from app.core.config.settings import Settings, get_settings
 from app.core.exceptions import AuthenticationError
 from app.domains.auth import AccessTokenVerifier, ApplicationUser, UserRepository
+from app.domains.challenges import ChallengeType
 from app.domains.challenges.ports import ChallengeReader
 from app.domains.evaluation.engine import EvaluationEngine
 from app.domains.evaluation.ports import HiddenTestSuiteReader, LLMProvider
+from app.domains.execution import ChallengeExecutorResolver, TextChallengeExecutor
+from app.domains.execution.application import ApplicationChallengeExecutor
+from app.domains.leaderboard import LeaderboardReader
+from app.domains.profile import ProfileReader
 from app.domains.progression import UserProgressReader
 from app.domains.scoring.ports import PromptTokenCounter
 from app.domains.scoring.service import ScoringService
 from app.domains.submissions import SubmissionRepository
+from app.infrastructure.application import (
+    LLMCodingAgent,
+    LocalWorkspaceFactory,
+    PlaywrightApplicationEvaluator,
+    StarterProjectRepository,
+)
+from app.infrastructure.application.sandbox import configured_sandbox
 from app.infrastructure.auth import create_access_token_verifier
 from app.infrastructure.database import (
+    PostgresAdminChallengeRepository,
     PostgresChallengeRepository,
     PostgresHiddenTestSuiteRepository,
+    PostgresLeaderboardRepository,
+    PostgresProfileRepository,
     PostgresSubmissionRepository,
     PostgresUserProgressRepository,
     PostgresUserRepository,
+    create_database_engine,
     create_session_factory,
+)
+from app.infrastructure.database.application_execution import (
+    PostgresApplicationExecutionCoordinator,
 )
 from app.infrastructure.llm import create_llm_provider
 from app.infrastructure.tokenization import GptOssPromptTokenCounter
 
 _bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def require_admin_authorization(
+    settings: Annotated[Settings, Depends(get_settings)],
+    x_admin_key: Annotated[str | None, Header(alias="X-Admin-Key")] = None,
+) -> None:
+    """Transport authorization boundary; admin use cases remain auth-mechanism agnostic."""
+    configured = settings.admin_api_key
+    if configured is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin API is not configured on this server.",
+        )
+    expected = configured.get_secret_value()
+    supplied = x_admin_key or ""
+    if not secrets.compare_digest(supplied.encode(), expected.encode()):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing X-Admin-Key header.",
+        )
 
 
 async def get_database_session(
@@ -51,6 +109,54 @@ def get_challenge_reader(
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> ChallengeReader:
     return PostgresChallengeRepository(session)
+
+
+def get_admin_challenge_repository(
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> AdminChallengeRepository:
+    return PostgresAdminChallengeRepository(session)
+
+
+def get_list_admin_challenges_use_case(
+    repository: Annotated[AdminChallengeRepository, Depends(get_admin_challenge_repository)],
+) -> ListAdminChallengesUseCase:
+    return ListAdminChallengesUseCase(repository)
+
+
+def get_admin_challenge_use_case(
+    repository: Annotated[AdminChallengeRepository, Depends(get_admin_challenge_repository)],
+) -> GetAdminChallengeUseCase:
+    return GetAdminChallengeUseCase(repository)
+
+
+def get_create_challenge_use_case(
+    repository: Annotated[AdminChallengeRepository, Depends(get_admin_challenge_repository)],
+) -> CreateChallengeUseCase:
+    return CreateChallengeUseCase(repository, StarterProjectRepository())
+
+
+def get_update_challenge_draft_use_case(
+    repository: Annotated[AdminChallengeRepository, Depends(get_admin_challenge_repository)],
+) -> UpdateChallengeDraftUseCase:
+    return UpdateChallengeDraftUseCase(repository, StarterProjectRepository())
+
+
+def get_create_challenge_version_use_case(
+    repository: Annotated[AdminChallengeRepository, Depends(get_admin_challenge_repository)],
+) -> CreateChallengeVersionUseCase:
+    return CreateChallengeVersionUseCase(repository)
+
+
+def get_publish_challenge_use_case(
+    repository: Annotated[AdminChallengeRepository, Depends(get_admin_challenge_repository)],
+) -> PublishChallengeUseCase:
+    return PublishChallengeUseCase(repository, StarterProjectRepository())
+
+
+def get_unpublish_challenge_use_case(
+    repository: Annotated[AdminChallengeRepository, Depends(get_admin_challenge_repository)],
+) -> UnpublishChallengeUseCase:
+    return UnpublishChallengeUseCase(repository)
 
 
 def get_evaluation_engine() -> EvaluationEngine:
@@ -69,6 +175,23 @@ def get_submission_repository(
     return PostgresSubmissionRepository(session)
 
 
+def get_application_execution_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ApplicationExecutionService:
+    return ApplicationExecutionService(
+        PostgresApplicationExecutionCoordinator(create_database_engine(settings)),
+        run_cooldown_seconds=settings.application_run_cooldown_seconds,
+        submit_cooldown_seconds=settings.application_submit_cooldown_seconds,
+        stale_after_seconds=settings.application_execution_lock_timeout_seconds,
+    )
+
+
+def get_application_submission_repository(
+    repository: Annotated[SubmissionRepository, Depends(get_submission_repository)],
+) -> ApplicationSubmissionRepository:
+    return repository  # type: ignore[return-value]
+
+
 def get_user_repository(
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> UserRepository:
@@ -81,10 +204,35 @@ def get_user_progress_reader(
     return PostgresUserProgressRepository(session)
 
 
+def get_profile_reader(
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> ProfileReader:
+    return PostgresProfileRepository(session)
+
+
+def get_leaderboard_reader(
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> LeaderboardReader:
+    return PostgresLeaderboardRepository(session)
+
+
+def get_challenge_leaderboard_use_case(
+    challenge_reader: Annotated[ChallengeReader, Depends(get_challenge_reader)],
+    leaderboard_reader: Annotated[LeaderboardReader, Depends(get_leaderboard_reader)],
+) -> GetChallengeLeaderboardUseCase:
+    return GetChallengeLeaderboardUseCase(challenge_reader, leaderboard_reader)
+
+
 def get_user_progress_use_case(
     reader: Annotated[UserProgressReader, Depends(get_user_progress_reader)],
 ) -> GetUserProgressUseCase:
     return GetUserProgressUseCase(reader)
+
+
+def get_current_user_profile_use_case(
+    reader: Annotated[ProfileReader, Depends(get_profile_reader)],
+) -> GetCurrentUserProfileUseCase:
+    return GetCurrentUserProfileUseCase(reader)
 
 
 def get_access_token_verifier(
@@ -173,28 +321,96 @@ def get_llm_provider(settings: Annotated[Settings, Depends(get_settings)]) -> LL
     return create_llm_provider(settings)
 
 
-def get_run_challenge_use_case(
-    challenge_reader: Annotated[ChallengeReader, Depends(get_challenge_reader)],
+def get_test_challenge_use_case(
+    settings: Annotated[Settings, Depends(get_settings)],
+    repository: Annotated[AdminChallengeRepository, Depends(get_admin_challenge_repository)],
     llm_provider: Annotated[LLMProvider, Depends(get_llm_provider)],
     evaluation_engine: Annotated[EvaluationEngine, Depends(get_evaluation_engine)],
+    prompt_token_counter: Annotated[PromptTokenCounter, Depends(get_prompt_token_counter)],
+    scoring_service: Annotated[ScoringService, Depends(get_scoring_service)],
+) -> TestChallengeUseCase:
+    return TestChallengeUseCase(
+        repository,
+        llm_provider,
+        evaluation_engine,
+        prompt_token_counter,
+        scoring_service,
+        ApplicationChallengeExecutor(
+            LLMCodingAgent(llm_provider),
+            LocalWorkspaceFactory(StarterProjectRepository()),
+            PlaywrightApplicationEvaluator(settings.application_browser_channel),
+            StarterProjectRepository(),
+            configured_sandbox(settings),
+        ),
+    )
+
+
+def get_starter_project_repository() -> StarterProjectRepository:
+    return StarterProjectRepository()
+
+
+def get_starter_preview_use_case(
+    challenge_reader: Annotated[ChallengeReader, Depends(get_challenge_reader)],
+    starters: Annotated[StarterProjectRepository, Depends(get_starter_project_repository)],
+) -> GetStarterPreviewUseCase:
+    return GetStarterPreviewUseCase(challenge_reader, starters)
+
+
+def get_challenge_executor_resolver(
+    settings: Annotated[Settings, Depends(get_settings)],
+    llm_provider: Annotated[LLMProvider, Depends(get_llm_provider)],
+    evaluation_engine: Annotated[EvaluationEngine, Depends(get_evaluation_engine)],
+    hidden_test_suite_reader: Annotated[
+        HiddenTestSuiteReader,
+        Depends(get_hidden_test_suite_reader),
+    ],
+    starters: Annotated[StarterProjectRepository, Depends(get_starter_project_repository)],
+) -> ChallengeExecutorResolver:
+    # TEXT and the APPLICATION prototype are executable; IMAGE fails explicitly on resolve.
+    return ChallengeExecutorResolver(
+        {
+            ChallengeType.TEXT: TextChallengeExecutor(
+                llm_provider,
+                evaluation_engine,
+                hidden_test_suite_reader,
+            ),
+            ChallengeType.APPLICATION: ApplicationChallengeExecutor(
+                LLMCodingAgent(llm_provider),
+                LocalWorkspaceFactory(starters),
+                PlaywrightApplicationEvaluator(settings.application_browser_channel),
+                StarterProjectRepository(),
+                configured_sandbox(settings),
+            ),
+        }
+    )
+
+
+def get_run_challenge_use_case(
+    challenge_reader: Annotated[ChallengeReader, Depends(get_challenge_reader)],
+    executor_resolver: Annotated[
+        ChallengeExecutorResolver,
+        Depends(get_challenge_executor_resolver),
+    ],
     access_service: Annotated[ChallengeAccessService, Depends(get_challenge_access_service)],
+    application_execution_service: Annotated[
+        ApplicationExecutionService,
+        Depends(get_application_execution_service),
+    ],
 ) -> RunChallengeUseCase:
     return RunChallengeUseCase(
         challenge_reader=challenge_reader,
-        llm_provider=llm_provider,
-        evaluation_engine=evaluation_engine,
+        executor_resolver=executor_resolver,
         access_service=access_service,
+        application_execution_service=application_execution_service,
     )
 
 
 def get_submit_challenge_use_case(
     challenge_reader: Annotated[ChallengeReader, Depends(get_challenge_reader)],
-    hidden_test_suite_reader: Annotated[
-        HiddenTestSuiteReader,
-        Depends(get_hidden_test_suite_reader),
+    executor_resolver: Annotated[
+        ChallengeExecutorResolver,
+        Depends(get_challenge_executor_resolver),
     ],
-    llm_provider: Annotated[LLMProvider, Depends(get_llm_provider)],
-    evaluation_engine: Annotated[EvaluationEngine, Depends(get_evaluation_engine)],
     prompt_token_counter: Annotated[
         PromptTokenCounter,
         Depends(get_prompt_token_counter),
@@ -205,14 +421,44 @@ def get_submit_challenge_use_case(
         Depends(get_submission_repository),
     ],
     access_service: Annotated[ChallengeAccessService, Depends(get_challenge_access_service)],
+    application_execution_service: Annotated[
+        ApplicationExecutionService,
+        Depends(get_application_execution_service),
+    ],
+    application_submission_repository: Annotated[
+        ApplicationSubmissionRepository,
+        Depends(get_application_submission_repository),
+    ],
 ) -> SubmitChallengeUseCase:
     return SubmitChallengeUseCase(
         challenge_reader=challenge_reader,
-        hidden_test_suite_reader=hidden_test_suite_reader,
-        llm_provider=llm_provider,
-        evaluation_engine=evaluation_engine,
+        executor_resolver=executor_resolver,
         prompt_token_counter=prompt_token_counter,
         scoring_service=scoring_service,
         submission_repository=submission_repository,
         access_service=access_service,
+        application_execution_service=application_execution_service,
+        application_submission_repository=application_submission_repository,
+    )
+
+
+def get_application_packages_use_case():
+    from app.application.admin.use_cases import ListApplicationPackagesUseCase
+
+    return ListApplicationPackagesUseCase(StarterProjectRepository())
+
+
+def get_application_sandbox(settings: Annotated[Settings, Depends(get_settings)]):
+    return configured_sandbox(settings)
+
+
+def get_package_health(settings: Annotated[Settings, Depends(get_settings)]):
+    from app.application.admin.package_health import ApplicationPackageHealth
+
+    packages = StarterProjectRepository()
+    return ApplicationPackageHealth(
+        packages,
+        LocalWorkspaceFactory(packages),
+        configured_sandbox(settings),
+        PlaywrightApplicationEvaluator(settings.application_browser_channel),
     )

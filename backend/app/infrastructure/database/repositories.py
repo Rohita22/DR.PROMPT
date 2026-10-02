@@ -1,9 +1,12 @@
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.challenges.execution_guard import application_submit_result_to_payload
+from app.application.challenges.models import ApplicationSubmitResult
 from app.core.exceptions import DomainError, PersistenceError
 from app.domains.challenges.models import (
     ChallengeTrack,
@@ -22,8 +25,16 @@ from app.domains.progression import (
     XPRewardConfiguration,
 )
 from app.domains.submissions.models import Submission
-from app.infrastructure.database.mappers import hidden_suite_from_rows, playable_challenge_from_rows
+from app.infrastructure.database.mappers import (
+    application_config_to_data,
+    grader_config_to_data,
+    hidden_suite_from_rows,
+    model_config_to_data,
+    playable_challenge_from_rows,
+    scoring_config_to_data,
+)
 from app.infrastructure.database.models import (
+    ApplicationSubmitRequestRow,
     ChallengeRow,
     ChallengeVersionRow,
     HiddenTestCaseRow,
@@ -34,6 +45,12 @@ from app.infrastructure.database.models import (
     VisibleTestCaseRow,
     XPTransactionRow,
 )
+
+_UPSERT_NAMESPACE = uuid.UUID("e894e9b3-91c6-47c6-8045-a56dc2be14ae")
+
+
+def _stable_id(label: str) -> uuid.UUID:
+    return uuid.uuid5(_UPSERT_NAMESPACE, label)
 
 
 class PostgresChallengeRepository:
@@ -155,101 +172,167 @@ class PostgresSubmissionRepository:
             raise PersistenceError("Authoritative submission ownership is required.")
         try:
             async with self._session.begin():
-                user_id = uuid.UUID(submission.user_id)
-                owner = await self._session.scalar(
-                    select(UserRow).where(UserRow.id == user_id).with_for_update()
+                progression, _ = await self._save(
+                    submission, difficulty=difficulty, xp_configuration=xp_configuration
                 )
-                if owner is None:
-                    raise PersistenceError("Submission owner is unavailable.")
-                version_id = await self._session.scalar(
-                    select(ChallengeVersionRow.id).where(
-                        ChallengeVersionRow.challenge_id == submission.challenge_id,
-                        ChallengeVersionRow.version == submission.challenge_version_id,
-                    )
-                )
-                if version_id is None:
-                    raise PersistenceError("Submission challenge version is unavailable.")
-                submission_row = SubmissionRow(
-                    id=uuid.UUID(submission.id),
-                    challenge_id=submission.challenge_id,
-                    challenge_version_id=version_id,
-                    user_id=user_id,
-                    prompt=submission.prompt,
-                    prompt_tokens=submission.prompt_tokens,
-                    passed_tests=submission.passed_tests,
-                    total_tests=submission.total_tests,
-                    accuracy=submission.accuracy,
-                    efficiency=submission.efficiency,
-                    final_score=submission.final_score,
-                    stars=submission.stars,
-                    model_identifier=submission.model_identifier,
-                    model_configuration_version=submission.model_configuration_version,
-                    created_at=submission.created_at,
-                )
-                self._session.add(submission_row)
-                await self._session.flush()
-
-                progress_row = await self._session.scalar(
-                    select(UserProgressRow)
-                    .where(
-                        UserProgressRow.user_id == user_id,
-                        UserProgressRow.challenge_id == submission.challenge_id,
-                    )
-                    .with_for_update()
-                )
-                existing = _progress_from_row(progress_row) if progress_row is not None else None
-                awarded_reasons = frozenset(
-                    XPAwardReason(value)
-                    for value in (
-                        await self._session.scalars(
-                            select(XPTransactionRow.reason).where(
-                                XPTransactionRow.user_id == user_id,
-                                XPTransactionRow.challenge_id == submission.challenge_id,
-                            )
-                        )
-                    ).all()
-                )
-                progress = self._progression.update_progress(
-                    submission=submission,
-                    existing=existing,
-                    occurred_at=submission.created_at,
-                )
-                awards = self._progression.new_awards(
-                    stars=submission.stars,
-                    difficulty=difficulty,
-                    awarded_reasons=awarded_reasons,
-                    configuration=xp_configuration,
-                )
-                if progress_row is None:
-                    self._session.add(_progress_to_row(progress))
-                else:
-                    _update_progress_row(progress_row, progress)
-                self._session.add_all(
-                    XPTransactionRow(
-                        id=uuid.uuid4(),
-                        user_id=user_id,
-                        challenge_id=submission.challenge_id,
-                        submission_id=submission_row.id,
-                        reason=award.reason.value,
-                        amount=award.amount,
-                        created_at=submission.created_at,
-                    )
-                    for award in awards
-                )
-                await self._session.flush()
-                total_xp = int(
-                    await self._session.scalar(
-                        select(func.coalesce(func.sum(XPTransactionRow.amount), 0)).where(
-                            XPTransactionRow.user_id == user_id
-                        )
-                    )
-                    or 0
-                )
-                return ProgressionResult(progress, awards, total_xp)
+                return progression
         except PersistenceError:
             raise
         except (SQLAlchemyError, ValueError):
             raise PersistenceError("Database operation failed.") from None
+
+    async def save_application_with_progression(
+        self,
+        submission: Submission,
+        *,
+        difficulty: Difficulty,
+        xp_configuration: XPRewardConfiguration,
+        reservation_id: str,
+        result: ApplicationSubmitResult,
+    ) -> ApplicationSubmitResult:
+        if submission.user_id is None:
+            raise PersistenceError("Authoritative submission ownership is required.")
+        try:
+            async with self._session.begin():
+                progression, submission_row = await self._save(
+                    submission, difficulty=difficulty, xp_configuration=xp_configuration
+                )
+                completed_result = ApplicationSubmitResult(
+                    challenge_slug=result.challenge_slug,
+                    challenge_version_id=result.challenge_version_id,
+                    passed_count=result.passed_count,
+                    total_count=result.total_count,
+                    evaluation_score=result.evaluation_score,
+                    prompt_tokens=result.prompt_tokens,
+                    efficiency=result.efficiency,
+                    final_score=result.final_score,
+                    stars=result.stars,
+                    xp_earned=progression.xp_earned,
+                    total_xp=progression.total_xp,
+                    best_score=progression.progress.best_score,
+                    best_stars=progression.progress.best_stars,
+                    completed=progression.progress.completed_at is not None,
+                    agent_status=result.agent_status,
+                    screenshot=result.screenshot,
+                )
+                statement = (
+                    update(ApplicationSubmitRequestRow)
+                    .where(
+                        ApplicationSubmitRequestRow.id == uuid.UUID(reservation_id),
+                        ApplicationSubmitRequestRow.user_id == uuid.UUID(submission.user_id),
+                        ApplicationSubmitRequestRow.status == "in_progress",
+                    )
+                    .values(
+                        status="completed",
+                        completed_at=func.now(),
+                        submission_id=submission_row.id,
+                        result_payload=application_submit_result_to_payload(completed_result),
+                    )
+                )
+                outcome = await self._session.execute(statement)
+                if outcome.rowcount != 1:
+                    raise PersistenceError("Application Submit reservation is unavailable.")
+                return completed_result
+        except PersistenceError:
+            raise
+        except (SQLAlchemyError, ValueError):
+            raise PersistenceError("Database operation failed.") from None
+
+    async def _save(
+        self,
+        submission: Submission,
+        *,
+        difficulty: Difficulty,
+        xp_configuration: XPRewardConfiguration,
+    ) -> tuple[ProgressionResult, SubmissionRow]:
+        user_id = uuid.UUID(submission.user_id or "")
+        owner = await self._session.scalar(
+            select(UserRow).where(UserRow.id == user_id).with_for_update()
+        )
+        if owner is None:
+            raise PersistenceError("Submission owner is unavailable.")
+        version_id = await self._session.scalar(
+            select(ChallengeVersionRow.id).where(
+                ChallengeVersionRow.challenge_id == submission.challenge_id,
+                ChallengeVersionRow.version == submission.challenge_version_id,
+            )
+        )
+        if version_id is None:
+            raise PersistenceError("Submission challenge version is unavailable.")
+        submission_row = SubmissionRow(
+            id=uuid.UUID(submission.id),
+            challenge_id=submission.challenge_id,
+            challenge_version_id=version_id,
+            user_id=user_id,
+            prompt=submission.prompt,
+            prompt_tokens=submission.prompt_tokens,
+            passed_tests=submission.passed_tests,
+            total_tests=submission.total_tests,
+            accuracy=submission.accuracy,
+            efficiency=submission.efficiency,
+            final_score=submission.final_score,
+            stars=submission.stars,
+            model_identifier=submission.model_identifier,
+            model_configuration_version=submission.model_configuration_version,
+            created_at=submission.created_at,
+        )
+        self._session.add(submission_row)
+        await self._session.flush()
+        progress_row = await self._session.scalar(
+            select(UserProgressRow)
+            .where(
+                UserProgressRow.user_id == user_id,
+                UserProgressRow.challenge_id == submission.challenge_id,
+            )
+            .with_for_update()
+        )
+        existing = _progress_from_row(progress_row) if progress_row is not None else None
+        awarded_reasons = frozenset(
+            XPAwardReason(value)
+            for value in (
+                await self._session.scalars(
+                    select(XPTransactionRow.reason).where(
+                        XPTransactionRow.user_id == user_id,
+                        XPTransactionRow.challenge_id == submission.challenge_id,
+                    )
+                )
+            ).all()
+        )
+        progress = self._progression.update_progress(
+            submission=submission, existing=existing, occurred_at=submission.created_at
+        )
+        awards = self._progression.new_awards(
+            stars=submission.stars,
+            difficulty=difficulty,
+            awarded_reasons=awarded_reasons,
+            configuration=xp_configuration,
+        )
+        if progress_row is None:
+            self._session.add(_progress_to_row(progress))
+        else:
+            _update_progress_row(progress_row, progress)
+        self._session.add_all(
+            XPTransactionRow(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                challenge_id=submission.challenge_id,
+                submission_id=submission_row.id,
+                reason=award.reason.value,
+                amount=award.amount,
+                created_at=submission.created_at,
+            )
+            for award in awards
+        )
+        await self._session.flush()
+        total_xp = int(
+            await self._session.scalar(
+                select(func.coalesce(func.sum(XPTransactionRow.amount), 0)).where(
+                    XPTransactionRow.user_id == user_id
+                )
+            )
+            or 0
+        )
+        return ProgressionResult(progress, awards, total_xp), submission_row
 
 
 class PostgresUserProgressRepository:
@@ -336,3 +419,124 @@ def _update_progress_row(
     row.attempts = progress.attempts
     row.completed_at = progress.completed_at
     row.updated_at = progress.updated_at
+
+
+class PostgresChallengeWriter:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def upsert(self, playable: PlayableChallenge, hidden_suite: HiddenTestSuite) -> None:
+        try:
+            async with self._session.begin():
+                await self._upsert_inner(playable, hidden_suite)
+        except (DomainError, SQLAlchemyError):
+            raise PersistenceError("Database operation failed.") from None
+
+    async def _upsert_inner(
+        self, playable: PlayableChallenge, hidden_suite: HiddenTestSuite
+    ) -> None:
+        challenge = playable.challenge
+        version = playable.version
+        initial_version_row_id = _stable_id(f"{challenge.id}:{version.version_id}")
+
+        challenge_ins = insert(ChallengeRow).values(
+            id=challenge.id,
+            slug=challenge.slug,
+            track=challenge.track.value,
+            sort_order=challenge.order,
+            current_version=version.version_id,
+        )
+        await self._session.execute(
+            challenge_ins.on_conflict_do_update(
+                index_elements=[ChallengeRow.id],
+                set_={
+                    "slug": challenge_ins.excluded.slug,
+                    "track": challenge_ins.excluded.track,
+                    "sort_order": challenge_ins.excluded.sort_order,
+                    "current_version": challenge_ins.excluded.current_version,
+                    "updated_at": func.now(),
+                },
+            )
+        )
+
+        version_ins = insert(ChallengeVersionRow).values(
+            id=initial_version_row_id,
+            challenge_id=challenge.id,
+            version=version.version_id,
+            title=version.title,
+            description=version.description,
+            objective=version.objective,
+            constraints=list(version.constraints),
+            difficulty=version.difficulty.value,
+            prompt_token_limit=version.prompt_token_limit,
+            evaluation_config={
+                "default_grader": grader_config_to_data(version.evaluation_config.default_grader)
+            },
+            model_config=model_config_to_data(version.model_config),
+            scoring_config=scoring_config_to_data(version.scoring_config),
+            publication_state=version.publication_state.value,
+            challenge_type=version.challenge_type.value,
+            application_config=application_config_to_data(version.application_config),
+        )
+        version_row_id = (
+            await self._session.execute(
+                version_ins.on_conflict_do_update(
+                    constraint="uq_challenge_version",
+                    set_={
+                        "title": version_ins.excluded.title,
+                        "description": version_ins.excluded.description,
+                        "objective": version_ins.excluded.objective,
+                        "constraints": version_ins.excluded.constraints,
+                        "difficulty": version_ins.excluded.difficulty,
+                        "prompt_token_limit": version_ins.excluded.prompt_token_limit,
+                        "evaluation_config": version_ins.excluded.evaluation_config,
+                        "model_config": version_ins.excluded.model_config,
+                        "scoring_config": version_ins.excluded.scoring_config,
+                        "publication_state": version_ins.excluded.publication_state,
+                        "challenge_type": version_ins.excluded.challenge_type,
+                        "application_config": version_ins.excluded.application_config,
+                    },
+                ).returning(ChallengeVersionRow.id)
+            )
+        ).scalar_one()
+
+        for row_type in (VisibleExampleRow, VisibleTestCaseRow, HiddenTestCaseRow):
+            await self._session.execute(
+                delete(row_type).where(row_type.challenge_version_id == version_row_id)
+            )
+
+        self._session.add_all(
+            VisibleExampleRow(
+                id=_stable_id(f"{challenge.id}:example:{index}"),
+                challenge_version_id=version_row_id,
+                input=example.input,
+                expected_output=example.expected_output,
+                explanation=example.explanation,
+                sort_order=index,
+            )
+            for index, example in enumerate(version.visible_examples, start=1)
+        )
+        self._session.add_all(
+            VisibleTestCaseRow(
+                id=_stable_id(f"{challenge.id}:visible:{test.id}"),
+                challenge_version_id=version_row_id,
+                test_id=test.id,
+                input=test.input,
+                expected_output=test.expected_output,
+                evaluation_config=grader_config_to_data(test.grader_config),
+                sort_order=index,
+            )
+            for index, test in enumerate(version.visible_test_cases, start=1)
+        )
+        self._session.add_all(
+            HiddenTestCaseRow(
+                id=_stable_id(f"{challenge.id}:hidden:{test.id}"),
+                challenge_version_id=version_row_id,
+                test_id=test.id,
+                input=test.input,
+                expected_output=test.expected_output,
+                evaluation_config=grader_config_to_data(test.grader_config),
+                sort_order=index,
+            )
+            for index, test in enumerate(hidden_suite.test_cases, start=1)
+        )

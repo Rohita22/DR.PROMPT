@@ -4,19 +4,20 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.domains.auth import AuthenticatedIdentity, AuthProvider
-from app.domains.challenges.models import PublicationState
+from app.domains.challenges.models import ChallengeType, PublicationState
 from app.domains.progression import XPRewardConfiguration
 from app.domains.submissions import Submission
 from app.infrastructure.challenges.in_memory_hidden_test_repository import (
     EXACT_OUTPUT_HIDDEN_TEST_SUITE,
 )
 from app.infrastructure.challenges.in_memory_repository import EXACT_OUTPUT_CHALLENGE
+from app.infrastructure.database.leaderboard_repository import PostgresLeaderboardRepository
 from app.infrastructure.database.mappers import (
     grader_config_to_data,
     model_config_to_data,
@@ -34,6 +35,7 @@ from app.infrastructure.database.models import (
     VisibleTestCaseRow,
     XPTransactionRow,
 )
+from app.infrastructure.database.profile_repository import PostgresProfileRepository
 from app.infrastructure.database.repositories import (
     PostgresChallengeRepository,
     PostgresHiddenTestSuiteRepository,
@@ -144,6 +146,14 @@ async def _exercise_repositories() -> None:
             assert await public_repository.list_published() == (source,)
             assert not hasattr(playable, "hidden_test_suite")
             assert await public_repository.get_by_slug("missing") is None
+            # The row omitted challenge_type: the server default classifies it as TEXT.
+            assert playable.version.challenge_type is ChallengeType.TEXT
+            async with factory() as check_session:
+                with pytest.raises(IntegrityError):
+                    async with check_session.begin():
+                        await check_session.execute(
+                            update(ChallengeVersionRow).values(challenge_type="quantum")
+                        )
 
             hidden = await hidden_repository.get_for_version(source.challenge.id, "1")
             assert hidden == EXACT_OUTPUT_HIDDEN_TEST_SUITE
@@ -215,6 +225,170 @@ async def _exercise_repositories() -> None:
             assert summary.challenges_completed == 1
             assert summary.stars_earned == 3
             assert summary.challenges[0].challenge_slug == "exact-output"
+
+            leaderboard_users = [
+                await user_repository.synchronize(
+                    AuthenticatedIdentity(
+                        AuthProvider.SUPABASE,
+                        f"leaderboard-user-{index}",
+                    )
+                )
+                for index in range(1, 5)
+            ]
+            leaderboard_time = datetime(2026, 1, 1, tzinfo=UTC)
+            historical_version_id = uuid.uuid4()
+            async with session.begin():
+                session.add(
+                    ChallengeVersionRow(
+                        id=historical_version_id,
+                        challenge_id=source.challenge.id,
+                        version="0",
+                        title=version.title,
+                        description=version.description,
+                        objective=version.objective,
+                        constraints=list(version.constraints),
+                        difficulty=version.difficulty.value,
+                        prompt_token_limit=version.prompt_token_limit,
+                        evaluation_config={
+                            "default_grader": grader_config_to_data(
+                                version.evaluation_config.default_grader
+                            )
+                        },
+                        model_config=model_config_to_data(version.model_config),
+                        scoring_config=scoring_config_to_data(version.scoring_config),
+                        publication_state=PublicationState.RETIRED.value,
+                    )
+                )
+                session.add_all(
+                    [
+                        SubmissionRow(
+                            id=uuid.UUID(int=10),
+                            challenge_id=source.challenge.id,
+                            challenge_version_id=version_row_id,
+                            user_id=uuid.UUID(leaderboard_users[0].id),
+                            prompt="best accuracy",
+                            prompt_tokens=40,
+                            passed_tests=6,
+                            total_tests=6,
+                            accuracy=95,
+                            efficiency=95,
+                            final_score=95,
+                            stars=2,
+                            model_identifier=version.model_config.model_id,
+                            model_configuration_version=version.model_config.configuration_version,
+                            created_at=leaderboard_time,
+                        ),
+                        SubmissionRow(
+                            id=uuid.UUID(int=11),
+                            challenge_id=source.challenge.id,
+                            challenge_version_id=version_row_id,
+                            user_id=uuid.UUID(leaderboard_users[0].id),
+                            prompt="inferior attempt",
+                            prompt_tokens=10,
+                            passed_tests=5,
+                            total_tests=6,
+                            accuracy=90,
+                            efficiency=100,
+                            final_score=94,
+                            stars=2,
+                            model_identifier=version.model_config.model_id,
+                            model_configuration_version=version.model_config.configuration_version,
+                            created_at=leaderboard_time,
+                        ),
+                        SubmissionRow(
+                            id=uuid.UUID(int=12),
+                            challenge_id=source.challenge.id,
+                            challenge_version_id=version_row_id,
+                            user_id=uuid.UUID(leaderboard_users[1].id),
+                            prompt="lower accuracy",
+                            prompt_tokens=20,
+                            passed_tests=5,
+                            total_tests=6,
+                            accuracy=94,
+                            efficiency=100,
+                            final_score=95,
+                            stars=2,
+                            model_identifier=version.model_config.model_id,
+                            model_configuration_version=version.model_config.configuration_version,
+                            created_at=leaderboard_time,
+                        ),
+                        SubmissionRow(
+                            id=uuid.UUID(int=13),
+                            challenge_id=source.challenge.id,
+                            challenge_version_id=historical_version_id,
+                            user_id=uuid.UUID(leaderboard_users[2].id),
+                            prompt="historical perfect",
+                            prompt_tokens=1,
+                            passed_tests=6,
+                            total_tests=6,
+                            accuracy=100,
+                            efficiency=100,
+                            final_score=100,
+                            stars=3,
+                            model_identifier=version.model_config.model_id,
+                            model_configuration_version=version.model_config.configuration_version,
+                            created_at=leaderboard_time,
+                        ),
+                        SubmissionRow(
+                            id=uuid.UUID(int=14),
+                            challenge_id=source.challenge.id,
+                            challenge_version_id=version_row_id,
+                            user_id=uuid.UUID(leaderboard_users[3].id),
+                            prompt="incompatible model config",
+                            prompt_tokens=1,
+                            passed_tests=6,
+                            total_tests=6,
+                            accuracy=100,
+                            efficiency=100,
+                            final_score=100,
+                            stars=3,
+                            model_identifier=version.model_config.model_id,
+                            model_configuration_version="incompatible",
+                            created_at=leaderboard_time,
+                        ),
+                    ]
+                )
+
+            leaderboard = await PostgresLeaderboardRepository(session).get_page(
+                challenge_id=source.challenge.id,
+                challenge_version_id=version.version_id,
+                model_identifier=version.model_config.model_id,
+                model_configuration_version=version.model_config.configuration_version,
+                limit=2,
+                offset=1,
+                current_user_id=leaderboard_users[1].id,
+            )
+            assert leaderboard.total_entries == 3
+            assert len(leaderboard.entries) == 2
+            assert [entry.submission_id for entry in leaderboard.entries] == [
+                str(uuid.UUID(int=10)),
+                str(uuid.UUID(int=12)),
+            ]
+            assert leaderboard.current_user_entry is not None
+            assert leaderboard.current_user_entry.rank == 3
+            assert all(entry.user_id != leaderboard_users[2].id for entry in leaderboard.entries)
+            assert all(entry.user_id != leaderboard_users[3].id for entry in leaderboard.entries)
+
+            profile_repository = PostgresProfileRepository(session)
+            profile = await profile_repository.get_snapshot(user.id, recent_limit=5)
+            assert profile.total_xp == 175
+            assert profile.published_challenges == 1
+            assert profile.challenges_completed == 1
+            assert profile.stars_earned == 3
+            assert profile.three_star_completions == 1
+            assert profile.best_leaderboard_rank == 1
+            assert len(profile.recent_activity) == 1
+            assert profile.recent_activity[0].challenge_slug == "exact-output"
+            assert profile.recent_activity[0].xp_earned == 175
+
+            isolated_profile = await profile_repository.get_snapshot(
+                leaderboard_users[0].id,
+                recent_limit=5,
+            )
+            assert isolated_profile.total_xp == 0
+            assert isolated_profile.challenges_completed == 0
+            assert isolated_profile.best_leaderboard_rank == 2
+            assert len(isolated_profile.recent_activity) == 2
 
             duplicate = XPTransactionRow(
                 id=uuid.uuid4(),

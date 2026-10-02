@@ -17,7 +17,6 @@ from app.application.challenges import (
 )
 from app.application.challenges.submit_challenge import SubmitChallengeUseCase
 from app.domains.auth import ApplicationUser, AuthProvider
-from app.domains.evaluation.engine import EvaluationEngine
 from app.domains.evaluation.model_execution import LLMExecutionResult
 from app.domains.scoring.service import ScoringService
 from app.infrastructure.challenges import (
@@ -26,6 +25,7 @@ from app.infrastructure.challenges import (
 )
 from app.infrastructure.submissions import InMemorySubmissionRepository
 from app.main import app
+from tests.fakes.execution import text_executor_resolver
 from tests.fakes.llm import FakeLLMProvider
 from tests.fakes.tokenization import FakePromptTokenCounter
 
@@ -113,9 +113,10 @@ def test_locked_submit_api_executes_and_persists_nothing() -> None:
     provider = FakeLLMProvider(LLMExecutionResult(output_text="unused", model_id="fake"))
     use_case = SubmitChallengeUseCase(
         challenge_reader=challenges,
-        hidden_test_suite_reader=InMemoryHiddenTestRepository(),
-        llm_provider=provider,
-        evaluation_engine=EvaluationEngine.with_builtin_graders(),
+        executor_resolver=text_executor_resolver(
+            provider,
+            InMemoryHiddenTestRepository(),
+        ),
         prompt_token_counter=FakePromptTokenCounter(5),
         scoring_service=ScoringService(),
         submission_repository=progress,

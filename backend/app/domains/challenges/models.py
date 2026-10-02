@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 
+from app.domains.application.models import ApplicationChallengeConfig
 from app.domains.challenges.errors import ChallengeDefinitionError
 from app.domains.evaluation.configuration import EvaluationConfiguration, ModelConfiguration
 from app.domains.evaluation.test_cases import VisibleTestCase
@@ -23,6 +24,18 @@ class Difficulty(StrEnum):
     MEDIUM = "medium"
     HARD = "hard"
     BOSS = "boss"
+
+
+class ChallengeType(StrEnum):
+    """Challenge family: selects the execution environment and result shape.
+
+    TEXT and APPLICATION have explicit executors. IMAGE remains unsupported and
+    fails explicitly rather than falling back to text execution.
+    """
+
+    TEXT = "text"
+    APPLICATION = "application"
+    IMAGE = "image"
 
 
 class PublicationState(StrEnum):
@@ -99,8 +112,18 @@ class ChallengeVersion:
     scoring_config: ScoringConfiguration
     model_config: ModelConfiguration
     publication_state: PublicationState = PublicationState.DRAFT
+    challenge_type: ChallengeType = ChallengeType.TEXT
+    application_config: ApplicationChallengeConfig | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.challenge_type, ChallengeType):
+            raise ChallengeDefinitionError("Challenge type must be a known ChallengeType.")
+        if (self.challenge_type is ChallengeType.APPLICATION) != (
+            self.application_config is not None
+        ):
+            raise ChallengeDefinitionError(
+                "Application configuration is required for, and only for, APPLICATION challenges."
+            )
         for attribute, label in (
             ("version_id", "Challenge version ID"),
             ("challenge_id", "Challenge ID"),
@@ -137,7 +160,11 @@ class ChallengeVersion:
         test_ids = tuple(test_case.id for test_case in self.visible_test_cases)
         if len(set(test_ids)) != len(test_ids):
             raise ChallengeDefinitionError("Visible test-case IDs must be unique.")
-        if self.publication_state is PublicationState.PUBLISHED and not self.visible_test_cases:
+        if (
+            self.publication_state is PublicationState.PUBLISHED
+            and self.challenge_type is ChallengeType.TEXT
+            and not self.visible_test_cases
+        ):
             raise ChallengeDefinitionError("A published challenge requires a visible test case.")
 
 

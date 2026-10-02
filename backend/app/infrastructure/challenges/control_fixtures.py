@@ -1,6 +1,7 @@
 from app.domains.challenges.models import (
     Challenge,
     ChallengeTrack,
+    ChallengeType,
     ChallengeVersion,
     Difficulty,
     PlayableChallenge,
@@ -103,6 +104,7 @@ def _playable(
             scoring_config=_SCORING,
             model_config=_model_config(slug, max_output_tokens),
             publication_state=PublicationState.PUBLISHED,
+            challenge_type=ChallengeType.TEXT,
         ),
     )
 

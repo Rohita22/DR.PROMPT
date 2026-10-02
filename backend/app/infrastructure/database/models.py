@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -38,7 +39,13 @@ class ChallengeRow(Base):
 
 class ChallengeVersionRow(Base):
     __tablename__ = "challenge_versions"
-    __table_args__ = (UniqueConstraint("challenge_id", "version", name="uq_challenge_version"),)
+    __table_args__ = (
+        UniqueConstraint("challenge_id", "version", name="uq_challenge_version"),
+        CheckConstraint(
+            "challenge_type IN ('text', 'application', 'image')",
+            name="ck_challenge_versions_challenge_type",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     challenge_id: Mapped[str] = mapped_column(
@@ -55,6 +62,8 @@ class ChallengeVersionRow(Base):
     model_config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     scoring_config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     publication_state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    challenge_type: Mapped[str] = mapped_column(String(32), nullable=False, server_default="text")
+    application_config: Mapped[dict[str, object] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -190,6 +199,72 @@ class SubmissionRow(Base):
     model_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
     model_configuration_version: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+Index(
+    "ix_submissions_leaderboard_rank",
+    SubmissionRow.challenge_version_id,
+    SubmissionRow.model_identifier,
+    SubmissionRow.model_configuration_version,
+    SubmissionRow.user_id,
+    SubmissionRow.final_score.desc(),
+    SubmissionRow.accuracy.desc(),
+    SubmissionRow.prompt_tokens.asc(),
+    SubmissionRow.created_at.asc(),
+    SubmissionRow.id.asc(),
+    postgresql_where=SubmissionRow.user_id.is_not(None),
+)
+
+
+class ApplicationExecutionCooldownRow(Base):
+    __tablename__ = "application_execution_cooldowns"
+    __table_args__ = (
+        CheckConstraint(
+            "execution_kind IN ('run', 'submit')",
+            name="ck_application_execution_cooldowns_kind",
+        ),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    execution_kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    last_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ApplicationSubmitRequestRow(Base):
+    __tablename__ = "application_submit_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "challenge_version_id",
+            "key_hash",
+            name="uq_application_submit_requests_scope_key",
+        ),
+        CheckConstraint(
+            "status IN ('in_progress', 'completed')",
+            name="ck_application_submit_requests_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    challenge_id: Mapped[str] = mapped_column(
+        ForeignKey("challenges.id", ondelete="RESTRICT"), nullable=False
+    )
+    challenge_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("challenge_versions.id", ondelete="RESTRICT"), nullable=False
+    )
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    submission_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("submissions.id", ondelete="RESTRICT"), unique=True
+    )
+    result_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB)
 
 
 class UserProgressRow(Base):

@@ -13,7 +13,6 @@ from app.application.challenges.models import RunChallengeCommand, SubmitChallen
 from app.application.challenges.run_challenge import RunChallengeUseCase
 from app.application.challenges.submit_challenge import SubmitChallengeUseCase
 from app.domains.challenges.models import ChallengeTrack, Difficulty
-from app.domains.evaluation.engine import EvaluationEngine
 from app.domains.evaluation.model_execution import LLMExecutionResult
 from app.domains.progression import ChallengeStatus, XPRewardConfiguration
 from app.domains.scoring.service import ScoringService
@@ -23,6 +22,7 @@ from app.infrastructure.challenges import (
     InMemoryHiddenTestRepository,
 )
 from app.infrastructure.submissions import InMemorySubmissionRepository
+from tests.fakes.execution import text_executor_resolver
 from tests.fakes.llm import FakeLLMProvider
 from tests.fakes.tokenization import FakePromptTokenCounter
 
@@ -83,9 +83,10 @@ def test_locked_submit_stops_before_token_count_model_or_persistence() -> None:
     token_counter = FakePromptTokenCounter(5)
     use_case = SubmitChallengeUseCase(
         challenge_reader=challenges,
-        hidden_test_suite_reader=InMemoryHiddenTestRepository(),
-        llm_provider=provider,
-        evaluation_engine=EvaluationEngine.with_builtin_graders(),
+        executor_resolver=text_executor_resolver(
+            provider,
+            InMemoryHiddenTestRepository(),
+        ),
         prompt_token_counter=token_counter,
         scoring_service=ScoringService(),
         submission_repository=progress,
@@ -120,8 +121,7 @@ def test_anonymous_run_allows_first_challenge_but_rejects_later_challenge() -> N
     )
     use_case = RunChallengeUseCase(
         challenge_reader=challenges,
-        llm_provider=provider,
-        evaluation_engine=EvaluationEngine.with_builtin_graders(),
+        executor_resolver=text_executor_resolver(provider),
         access_service=ChallengeAccessService(challenges, progress),
     )
 

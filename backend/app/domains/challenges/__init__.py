@@ -3,6 +3,7 @@
 from app.domains.challenges.models import (
     Challenge,
     ChallengeTrack,
+    ChallengeType,
     ChallengeVersion,
     Difficulty,
     PlayableChallenge,
@@ -13,6 +14,7 @@ from app.domains.challenges.models import (
 __all__ = [
     "Challenge",
     "ChallengeTrack",
+    "ChallengeType",
     "ChallengeVersion",
     "Difficulty",
     "PlayableChallenge",

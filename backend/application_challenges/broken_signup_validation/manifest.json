@@ -1,0 +1,466 @@
+{
+  "id": "broken-signup-validation",
+  "display_name": "Broken Signup Validation",
+  "description": "Fix interactive behavior while preserving the existing design and content.",
+  "defaults": {
+    "schema_version": 1,
+    "execution_mode": "sandboxed_executable",
+    "starter_project": "broken-signup-validation",
+    "page_source": "index.html",
+    "editable_files": [
+      "src/App.tsx",
+      "src/validation.ts"
+    ],
+    "build_command": [
+      "sandbox",
+      "build"
+    ],
+    "build_output": "dist/index.html",
+    "visible_checks": [
+      "build",
+      "bad_email",
+      "short_password",
+      "valid_signup"
+    ],
+    "hidden_checks": [
+      "build",
+      "bad_email",
+      "short_password",
+      "valid_signup",
+      "empty_fields",
+      "trim_email",
+      "uncommon_email",
+      "password_boundary",
+      "correct_errors",
+      "keyboard_submit",
+      "page_preserved",
+      "protected"
+    ],
+    "viewports": [
+      {
+        "id": "desktop",
+        "width": 1280,
+        "height": 800,
+        "label": "App view",
+        "screenshot": true
+      },
+      {
+        "id": "mobile",
+        "width": 390,
+        "height": 844,
+        "label": "Phone",
+        "screenshot": true
+      }
+    ],
+    "limits": {
+      "agent_timeout_seconds": 90,
+      "build_timeout_seconds": 20,
+      "browser_timeout_seconds": 20,
+      "max_file_bytes": 32000,
+      "max_files": 2,
+      "max_log_chars": 2000
+    }
+  },
+  "checks": [
+    {
+      "id": "build",
+      "implementation": "build_succeeds",
+      "label": "App typechecks and builds",
+      "parameters": {}
+    },
+    {
+      "id": "bad_email",
+      "implementation": "interaction",
+      "label": "Malformed email is rejected",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "[name=email]",
+            "value": "not-an-email"
+          },
+          {
+            "action": "fill",
+            "selector": "[name=password]",
+            "value": "abcdefgh"
+          },
+          {
+            "action": "click",
+            "selector": "button[type=submit]"
+          },
+          {
+            "action": "text",
+            "selector": "[role=status]",
+            "value": ""
+          },
+          {
+            "action": "text",
+            "selector": "#email-error",
+            "value": "Enter a valid email address."
+          }
+        ]
+      }
+    },
+    {
+      "id": "short_password",
+      "implementation": "interaction",
+      "label": "Passwords shorter than 8 characters are rejected",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "[name=email]",
+            "value": "alex@example.com"
+          },
+          {
+            "action": "fill",
+            "selector": "[name=password]",
+            "value": "short"
+          },
+          {
+            "action": "click",
+            "selector": "button[type=submit]"
+          },
+          {
+            "action": "text",
+            "selector": "[role=status]",
+            "value": ""
+          },
+          {
+            "action": "text",
+            "selector": "#password-error",
+            "value": "Use at least 8 characters."
+          }
+        ]
+      }
+    },
+    {
+      "id": "valid_signup",
+      "implementation": "interaction",
+      "label": "A valid form creates an account",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "[name=email]",
+            "value": "alex@example.com"
+          },
+          {
+            "action": "fill",
+            "selector": "[name=password]",
+            "value": "abcdefgh"
+          },
+          {
+            "action": "click",
+            "selector": "button[type=submit]"
+          },
+          {
+            "action": "text",
+            "selector": "[role=status]",
+            "value": "Account created"
+          }
+        ]
+      }
+    },
+    {
+      "id": "empty_fields",
+      "implementation": "interaction",
+      "label": "Required fields cannot be empty",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "[name=email]",
+            "value": ""
+          },
+          {
+            "action": "fill",
+            "selector": "[name=password]",
+            "value": ""
+          },
+          {
+            "action": "click",
+            "selector": "button[type=submit]"
+          },
+          {
+            "action": "text",
+            "selector": "[role=status]",
+            "value": ""
+          },
+          {
+            "action": "text",
+            "selector": "#email-error",
+            "value": "Enter a valid email address."
+          },
+          {
+            "action": "text",
+            "selector": "#password-error",
+            "value": "Use at least 8 characters."
+          }
+        ]
+      }
+    },
+    {
+      "id": "trim_email",
+      "implementation": "interaction",
+      "label": "Email whitespace is normalized",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "[name=email]",
+            "value": "  alex@example.com  "
+          },
+          {
+            "action": "fill",
+            "selector": "[name=password]",
+            "value": "abcdefgh"
+          },
+          {
+            "action": "click",
+            "selector": "button[type=submit]"
+          },
+          {
+            "action": "text",
+            "selector": "[role=status]",
+            "value": "Account created"
+          }
+        ]
+      }
+    },
+    {
+      "id": "uncommon_email",
+      "implementation": "interaction",
+      "label": "Valid plus-address email works",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "[name=email]",
+            "value": "alex+notes@studio.example"
+          },
+          {
+            "action": "fill",
+            "selector": "[name=password]",
+            "value": "abcdefgh"
+          },
+          {
+            "action": "click",
+            "selector": "button[type=submit]"
+          },
+          {
+            "action": "text",
+            "selector": "[role=status]",
+            "value": "Account created"
+          }
+        ]
+      }
+    },
+    {
+      "id": "password_boundary",
+      "implementation": "interaction",
+      "label": "Eight characters pass and seven fail",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "[name=email]",
+            "value": "a@example.com"
+          },
+          {
+            "action": "fill",
+            "selector": "[name=password]",
+            "value": "1234567"
+          },
+          {
+            "action": "click",
+            "selector": "button[type=submit]"
+          },
+          {
+            "action": "text",
+            "selector": "[role=status]",
+            "value": ""
+          },
+          {
+            "action": "fill",
+            "selector": "[name=email]",
+            "value": "a@example.com"
+          },
+          {
+            "action": "fill",
+            "selector": "[name=password]",
+            "value": "12345678"
+          },
+          {
+            "action": "click",
+            "selector": "button[type=submit]"
+          },
+          {
+            "action": "text",
+            "selector": "[role=status]",
+            "value": "Account created"
+          }
+        ]
+      }
+    },
+    {
+      "id": "correct_errors",
+      "implementation": "interaction",
+      "label": "Feedback clears when fields are corrected",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "[name=email]",
+            "value": "bad"
+          },
+          {
+            "action": "fill",
+            "selector": "[name=password]",
+            "value": "x"
+          },
+          {
+            "action": "click",
+            "selector": "button[type=submit]"
+          },
+          {
+            "action": "text",
+            "selector": "[role=status]",
+            "value": ""
+          },
+          {
+            "action": "fill",
+            "selector": "[name=email]",
+            "value": "a@example.com"
+          },
+          {
+            "action": "fill",
+            "selector": "[name=password]",
+            "value": "abcdefgh"
+          },
+          {
+            "action": "text",
+            "selector": "#email-error",
+            "value": ""
+          },
+          {
+            "action": "text",
+            "selector": "#password-error",
+            "value": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "keyboard_submit",
+      "implementation": "interaction",
+      "label": "Enter submits the valid form",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "[name=email]",
+            "value": "a@example.com"
+          },
+          {
+            "action": "fill",
+            "selector": "[name=password]",
+            "value": "abcdefgh"
+          },
+          {
+            "action": "press",
+            "selector": "[name=password]",
+            "value": "Enter"
+          },
+          {
+            "action": "text",
+            "selector": "[role=status]",
+            "value": "Account created"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page_preserved",
+      "implementation": "interaction",
+      "label": "Unrelated page content stays visible",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "text",
+            "selector": "header strong",
+            "value": "forma / studio"
+          },
+          {
+            "action": "text",
+            "selector": "footer",
+            "value": "Forma Studio \u00b7 Made for everyday progress."
+          }
+        ]
+      }
+    },
+    {
+      "id": "protected",
+      "implementation": "protected_files_unchanged",
+      "label": "Protected files stay unchanged",
+      "parameters": {}
+    }
+  ],
+  "protected_paths": [
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "index.html",
+    "src/main.tsx",
+    "src/styles.css"
+  ],
+  "sandbox": {
+    "runtime": "react-typescript-v1",
+    "install_strategy": "prepared_image",
+    "commands": [
+      "typecheck",
+      "build",
+      "browser_tests"
+    ],
+    "generated_paths": [
+      "dist"
+    ],
+    "network": "none",
+    "cpus": 1.0,
+    "memory_mb": 768,
+    "pids": 128,
+    "timeout_seconds": 60,
+    "workspace_mb": 32,
+    "max_output_bytes": 4000000
+  }
+}

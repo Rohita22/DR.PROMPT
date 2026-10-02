@@ -6,6 +6,12 @@ from app.application.challenges.errors import (
 )
 from app.domains.evaluation.results import FailureReason
 from app.domains.evaluation.types import EvaluationValue
+from app.domains.execution.models import (
+    AgentStatus,
+    BuildArtifact,
+    ChangedFilesArtifact,
+    ScreenshotArtifact,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +57,7 @@ class SubmitChallengeCommand:
     challenge_slug: str
     player_prompt: str
     owner_user_id: str
+    idempotency_key: str | None = None
 
     def __post_init__(self) -> None:
         slug = self.challenge_slug.strip()
@@ -63,6 +70,8 @@ class SubmitChallengeCommand:
             raise SubmitChallengeRequestError("Authenticated owner ID cannot be blank.")
         object.__setattr__(self, "challenge_slug", slug)
         object.__setattr__(self, "owner_user_id", owner_user_id)
+        if self.idempotency_key is not None:
+            object.__setattr__(self, "idempotency_key", self.idempotency_key.strip())
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,3 +92,49 @@ class SubmitChallengeResult:
     best_score: float
     best_stars: int
     completed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicationCheckRunResult:
+    check_id: str
+    label: str
+    passed: bool
+    message: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicationRunResult:
+    """Visible APPLICATION Run feedback: what the agent built and the visible checks."""
+
+    challenge_id: str
+    challenge_slug: str
+    challenge_version_id: str
+    passed_count: int
+    total_count: int
+    evaluation_score: float
+    checks: tuple[ApplicationCheckRunResult, ...]
+    changes: ChangedFilesArtifact
+    build: BuildArtifact
+    screenshots: tuple[ScreenshotArtifact, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicationSubmitResult:
+    """Aggregate-only hidden APPLICATION evaluation; no per-check field exists."""
+
+    challenge_slug: str
+    challenge_version_id: str
+    passed_count: int
+    total_count: int
+    evaluation_score: float
+    prompt_tokens: int
+    efficiency: float
+    final_score: float
+    stars: int
+    xp_earned: int
+    total_xp: int
+    best_score: float
+    best_stars: int
+    completed: bool
+    agent_status: AgentStatus
+    screenshot: ScreenshotArtifact | None

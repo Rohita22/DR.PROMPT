@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "DR. PROMPT",
-  description: "A prompt-engineering skill game.",
+  title: "DR. PROMPT · Learn prompting by doing",
+  description: "A hands-on prompt-engineering game with visible tests, hidden evaluations, objective scores, stars, and progression.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
@@ -15,4 +15,3 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     </html>
   );
 }
-

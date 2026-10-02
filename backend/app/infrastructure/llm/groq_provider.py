@@ -10,12 +10,17 @@ from groq import (
     RateLimitError,
 )
 from groq.types.chat import ChatCompletionMessageParam
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError, ValidationError
 
 from app.core.exceptions import (
     LLMAuthenticationError,
     LLMMalformedResponseError,
+    LLMOutputTruncatedError,
     LLMProviderError,
     LLMRateLimitError,
+    LLMRefusalError,
+    LLMStructuredResponseError,
     LLMTimeoutError,
 )
 from app.domains.evaluation.errors import EvaluationConfigurationError
@@ -33,6 +38,7 @@ class _Message(Protocol):
 
 class _Choice(Protocol):
     message: _Message
+    finish_reason: str
 
 
 class _Usage(Protocol):
@@ -55,6 +61,9 @@ class _CompletionsResource(Protocol):
         model: str,
         temperature: float,
         max_completion_tokens: int,
+        reasoning_effort: str | None = None,
+        reasoning_format: str | None = None,
+        response_format: Mapping[str, object] | None = None,
     ) -> _CompletionResponse: ...
 
 
@@ -115,6 +124,36 @@ def _retry_after_seconds(error: RateLimitError) -> float | None:
     return value if value >= 0 else None
 
 
+def _response_format(request: LLMExecutionRequest) -> dict[str, object] | None:
+    specification = request.structured_output
+    if specification is None:
+        return None
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": specification.name,
+            "strict": specification.strict,
+            "schema": _json_compatible(specification.schema),
+        },
+    }
+
+
+def _validate_structured_output(request: LLMExecutionRequest, output_text: str) -> None:
+    specification = request.structured_output
+    if specification is None:
+        return
+    try:
+        payload = json.loads(output_text)
+        Draft202012Validator.check_schema(specification.schema)
+        Draft202012Validator(specification.schema).validate(payload)
+    except SchemaError as error:
+        raise EvaluationConfigurationError("The structured output schema is invalid.") from error
+    except (ValueError, TypeError, RecursionError, ValidationError):
+        raise LLMStructuredResponseError(
+            "The coding agent returned an invalid structured response."
+        ) from None
+
+
 class GroqProvider:
     """Groq adapter for the provider-neutral asynchronous execution port."""
 
@@ -122,12 +161,20 @@ class GroqProvider:
         self._client = client
 
     async def generate(self, request: LLMExecutionRequest) -> LLMExecutionResult:
+        response_format = _response_format(request)
+        optional: dict[str, object] = {}
+        if request.model_config.reasoning_effort is not None:
+            optional["reasoning_effort"] = request.model_config.reasoning_effort.value
+        if response_format is not None:
+            optional["response_format"] = response_format
+            optional["reasoning_format"] = "hidden"
         try:
             response = await self._client.chat.completions.create(
                 messages=_messages_for(request),
                 model=request.model_config.model_id,
                 temperature=request.model_config.temperature,
                 max_completion_tokens=request.model_config.max_output_tokens,
+                **optional,
             )
         except (AuthenticationError, PermissionDeniedError):
             raise LLMAuthenticationError(
@@ -148,16 +195,24 @@ class GroqProvider:
             choice = response.choices[0]
             output_text = choice.message.content
             model_id = response.model
+            finish_reason = choice.finish_reason
         except (AttributeError, IndexError, TypeError):
             raise LLMMalformedResponseError(
                 "The model provider returned an unusable response."
             ) from None
+        refusal = getattr(choice.message, "refusal", None)
+        if isinstance(refusal, str) and refusal.strip():
+            raise LLMRefusalError("The coding agent declined the requested task.")
+        if finish_reason == "length":
+            raise LLMOutputTruncatedError("The coding agent response exceeded its output limit.")
         if (
             not isinstance(output_text, str)
             or not isinstance(model_id, str)
             or not model_id.strip()
         ):
             raise LLMMalformedResponseError("The model provider returned an unusable response.")
+
+        _validate_structured_output(request, output_text)
 
         usage = None
         if response.usage is not None:

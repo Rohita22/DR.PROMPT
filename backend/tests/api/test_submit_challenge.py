@@ -18,7 +18,6 @@ from app.application.challenges.access import ChallengeAccessService
 from app.application.challenges.submit_challenge import SubmitChallengeUseCase
 from app.core.exceptions import AuthenticationError, LLMRateLimitError, PersistenceError
 from app.domains.auth import ApplicationUser, AuthenticatedIdentity, AuthProvider
-from app.domains.evaluation.engine import EvaluationEngine
 from app.domains.evaluation.model_execution import LLMExecutionRequest, LLMExecutionResult
 from app.domains.scoring.service import ScoringService
 from app.infrastructure.auth import InMemoryUserRepository
@@ -28,6 +27,7 @@ from app.infrastructure.challenges import (
 )
 from app.infrastructure.submissions import InMemorySubmissionRepository
 from app.main import app
+from tests.fakes.execution import text_executor_resolver
 from tests.fakes.llm import FakeLLMProvider
 from tests.fakes.tokenization import FakePromptTokenCounter
 
@@ -74,11 +74,14 @@ def make_submit_use_case(
     progression_repository = submission_repository or InMemorySubmissionRepository()
     return SubmitChallengeUseCase(
         challenge_reader=challenge_reader,
-        hidden_test_suite_reader=(
-            hidden_repository if hidden_repository is not None else InMemoryHiddenTestRepository()
+        executor_resolver=text_executor_resolver(
+            provider,
+            (
+                hidden_repository
+                if hidden_repository is not None
+                else InMemoryHiddenTestRepository()
+            ),
         ),
-        llm_provider=provider,
-        evaluation_engine=EvaluationEngine.with_builtin_graders(),
         prompt_token_counter=FakePromptTokenCounter(token_count),
         scoring_service=ScoringService(),
         submission_repository=progression_repository,

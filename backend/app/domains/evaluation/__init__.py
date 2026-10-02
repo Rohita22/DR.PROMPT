@@ -4,11 +4,13 @@ from app.domains.evaluation.configuration import (
     EvaluationConfiguration,
     GraderType,
     ModelConfiguration,
+    ReasoningEffort,
 )
 from app.domains.evaluation.engine import EvaluationEngine
 from app.domains.evaluation.model_execution import (
     LLMExecutionRequest,
     LLMExecutionResult,
+    StructuredOutputSpecification,
     TokenUsage,
 )
 from app.domains.evaluation.registry import GraderRegistry
@@ -26,7 +28,9 @@ __all__ = [
     "HiddenTestSuite",
     "LLMExecutionRequest",
     "LLMExecutionResult",
+    "StructuredOutputSpecification",
     "ModelConfiguration",
+    "ReasoningEffort",
     "TestEvaluationResult",
     "TokenUsage",
     "VisibleTestCase",

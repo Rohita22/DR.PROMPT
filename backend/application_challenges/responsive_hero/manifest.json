@@ -1,0 +1,215 @@
+{
+  "id": "responsive-hero",
+  "display_name": "Responsive Hero",
+  "description": "A static landing page with a stacked hero to make responsive.",
+  "protected_paths": [
+    "build.mjs"
+  ],
+  "defaults": {
+    "schema_version": 1,
+    "starter_project": "responsive-hero",
+    "page_source": "src/index.html",
+    "editable_files": [
+      "src/index.html",
+      "src/styles.css"
+    ],
+    "build_command": [
+      "node",
+      "build.mjs"
+    ],
+    "build_output": "dist/index.html",
+    "visible_checks": [
+      "build",
+      "desktop_two_column",
+      "cta_visible",
+      "mobile_no_overflow"
+    ],
+    "hidden_checks": [
+      "desktop_two_column",
+      "wide_two_column",
+      "mobile_no_overflow",
+      "semantic_structure",
+      "landmarks_unchanged",
+      "mobile_stacked",
+      "small_no_overflow",
+      "cta_interactive",
+      "protected_files_unchanged"
+    ],
+    "viewports": [
+      {
+        "id": "desktop",
+        "width": 1280,
+        "height": 800,
+        "label": "Desktop",
+        "screenshot": true
+      },
+      {
+        "id": "wide",
+        "width": 1440,
+        "height": 900,
+        "label": "Wide desktop",
+        "screenshot": false
+      },
+      {
+        "id": "mobile",
+        "width": 390,
+        "height": 844,
+        "label": "Phone",
+        "screenshot": true
+      },
+      {
+        "id": "small",
+        "width": 320,
+        "height": 640,
+        "label": "Narrow phone",
+        "screenshot": false
+      }
+    ],
+    "limits": {
+      "agent_timeout_seconds": 90.0,
+      "build_timeout_seconds": 20.0,
+      "browser_timeout_seconds": 20.0,
+      "max_file_bytes": 32000,
+      "max_files": 2,
+      "max_log_chars": 2000
+    }
+  },
+  "checks": [
+    {
+      "id": "build",
+      "implementation": "build_succeeds",
+      "label": "Project builds",
+      "parameters": {}
+    },
+    {
+      "id": "desktop_two_column",
+      "implementation": "horizontal_row",
+      "label": "Desktop hero uses two columns, content on the left",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "selectors": [
+          "[data-role=\"hero-content\"]",
+          "[data-role=\"hero-visual\"]"
+        ],
+        "count": 2,
+        "min_width_ratio": 0.25
+      }
+    },
+    {
+      "id": "cta_visible",
+      "implementation": "element_visible",
+      "label": "Call-to-action is visible",
+      "parameters": {
+        "viewports": [
+          "desktop",
+          "mobile"
+        ],
+        "selectors": [
+          "[data-role=\"hero-cta\"]"
+        ],
+        "above_fold": true
+      }
+    },
+    {
+      "id": "mobile_no_overflow",
+      "implementation": "no_horizontal_overflow",
+      "label": "No horizontal overflow at 390px",
+      "parameters": {
+        "viewports": [
+          "mobile"
+        ]
+      }
+    },
+    {
+      "id": "wide_two_column",
+      "implementation": "horizontal_row",
+      "label": "Two columns at wide desktop width",
+      "parameters": {
+        "viewports": [
+          "wide"
+        ],
+        "selectors": [
+          "[data-role=\"hero-content\"]",
+          "[data-role=\"hero-visual\"]"
+        ],
+        "count": 2,
+        "min_width_ratio": 0.25
+      }
+    },
+    {
+      "id": "semantic_structure",
+      "implementation": "required_structure",
+      "label": "Original semantic structure",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "selectors": [
+          "main [data-role=\"hero\"]",
+          "[data-role=\"hero\"] h1",
+          "h1",
+          "a[data-role=\"hero-cta\"], button[data-role=\"hero-cta\"]"
+        ]
+      }
+    },
+    {
+      "id": "landmarks_unchanged",
+      "implementation": "protected_markup_unchanged",
+      "label": "Header and footer unchanged",
+      "parameters": {
+        "tags": [
+          "header",
+          "footer"
+        ]
+      }
+    },
+    {
+      "id": "mobile_stacked",
+      "implementation": "vertical_stack",
+      "label": "Readable stacked phone layout",
+      "parameters": {
+        "viewports": [
+          "mobile"
+        ],
+        "selectors": [
+          "[data-role=\"hero-content\"]",
+          "[data-role=\"hero-visual\"]"
+        ],
+        "count": 2,
+        "min_width_ratio": 0.6
+      }
+    },
+    {
+      "id": "small_no_overflow",
+      "implementation": "no_horizontal_overflow",
+      "label": "No horizontal overflow at 320px",
+      "parameters": {
+        "viewports": [
+          "small"
+        ]
+      }
+    },
+    {
+      "id": "cta_interactive",
+      "implementation": "element_clickable",
+      "label": "Call-to-action remains clickable",
+      "parameters": {
+        "viewports": [
+          "desktop",
+          "mobile"
+        ],
+        "selectors": [
+          "[data-role=\"hero-cta\"]"
+        ]
+      }
+    },
+    {
+      "id": "protected_files_unchanged",
+      "implementation": "protected_files_unchanged",
+      "label": "Protected files unchanged",
+      "parameters": {}
+    }
+  ]
+}

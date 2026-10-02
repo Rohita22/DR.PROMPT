@@ -15,6 +15,8 @@ class FailureReason(StrEnum):
     EXPECTED_ARRAY = "expected_array"
     ARRAY_MISMATCH = "array_mismatch"
     MISSING_OUTPUT = "missing_output"
+    CHECK_FAILED = "check_failed"
+    AGENT_OUTPUT_REJECTED = "agent_output_rejected"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +54,7 @@ class GradeResult:
 class TestEvaluationResult:
     test_case_id: str
     grade: GradeResult
+    label: str | None = None
 
     def __post_init__(self) -> None:
         test_case_id = self.test_case_id.strip()

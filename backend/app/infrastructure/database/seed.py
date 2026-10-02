@@ -1,4 +1,4 @@
-"""Explicit, idempotent development seed for the CONTROL progression path."""
+"""Explicit, idempotent development seed for the CONTROL path and application prototype."""
 
 import asyncio
 import uuid
@@ -10,11 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.domains.challenges.models import PlayableChallenge
 from app.domains.evaluation.test_cases import HiddenTestSuite
+from app.infrastructure.challenges.application_fixtures import ALL_APPLICATION_CHALLENGES
 from app.infrastructure.challenges.control_fixtures import (
     CONTROL_CHALLENGES,
     CONTROL_HIDDEN_TEST_SUITES,
 )
 from app.infrastructure.database.mappers import (
+    application_config_to_data,
     grader_config_to_data,
     model_config_to_data,
     scoring_config_to_data,
@@ -45,12 +47,16 @@ async def seed(settings: Settings | None = None) -> None:
                 playable,
                 CONTROL_HIDDEN_TEST_SUITES[playable.challenge.id],
             )
+        # The prototype APPLICATION challenge has no hidden test rows: its hidden checks
+        # are server-side code named by its versioned application configuration.
+        for playable in ALL_APPLICATION_CHALLENGES:
+            await _seed_playable(session, playable, None)
 
 
 async def _seed_playable(
     session: AsyncSession,
     playable: PlayableChallenge,
-    hidden_suite: HiddenTestSuite,
+    hidden_suite: HiddenTestSuite | None,
 ) -> None:
     challenge = playable.challenge
     version = playable.version
@@ -91,6 +97,8 @@ async def _seed_playable(
         model_config=model_config_to_data(version.model_config),
         scoring_config=scoring_config_to_data(version.scoring_config),
         publication_state=version.publication_state.value,
+        challenge_type=version.challenge_type.value,
+        application_config=application_config_to_data(version.application_config),
     )
     version_row_id = (
         await session.execute(
@@ -107,6 +115,8 @@ async def _seed_playable(
                     "model_config": version_insert.excluded.model_config,
                     "scoring_config": version_insert.excluded.scoring_config,
                     "publication_state": version_insert.excluded.publication_state,
+                    "challenge_type": version_insert.excluded.challenge_type,
+                    "application_config": version_insert.excluded.application_config,
                 },
             ).returning(ChallengeVersionRow.id)
         )
@@ -150,7 +160,7 @@ async def _seed_playable(
             evaluation_config=grader_config_to_data(test.grader_config),
             sort_order=index,
         )
-        for index, test in enumerate(hidden_suite.test_cases, start=1)
+        for index, test in enumerate(hidden_suite.test_cases if hidden_suite else (), start=1)
     )
 
 

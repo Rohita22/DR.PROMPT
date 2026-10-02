@@ -8,13 +8,13 @@ from app.application.challenges.run_challenge import RunChallengeUseCase
 from app.core.exceptions import LLMProviderError
 from app.domains.challenges.errors import ChallengeNotFoundError
 from app.domains.challenges.models import PlayableChallenge, PublicationState
-from app.domains.evaluation.engine import EvaluationEngine
 from app.domains.evaluation.model_execution import LLMExecutionRequest, LLMExecutionResult
 from app.infrastructure.challenges.in_memory_repository import (
     EXACT_OUTPUT_CHALLENGE,
     InMemoryChallengeRepository,
 )
 from app.infrastructure.submissions import InMemorySubmissionRepository
+from tests.fakes.execution import text_executor_resolver
 from tests.fakes.llm import FakeLLMProvider
 
 
@@ -43,8 +43,7 @@ class FailingProvider:
 def use_case(reader: TrackingChallengeReader, provider: FakeLLMProvider) -> RunChallengeUseCase:
     return RunChallengeUseCase(
         challenge_reader=reader,
-        llm_provider=provider,
-        evaluation_engine=EvaluationEngine.with_builtin_graders(),
+        executor_resolver=text_executor_resolver(provider),
         access_service=ChallengeAccessService(reader, InMemorySubmissionRepository()),
     )
 
@@ -127,8 +126,7 @@ def test_provider_failure_propagates_instead_of_becoming_a_failed_answer() -> No
     reader = TrackingChallengeReader(EXACT_OUTPUT_CHALLENGE)
     runner = RunChallengeUseCase(
         challenge_reader=reader,
-        llm_provider=provider,
-        evaluation_engine=EvaluationEngine.with_builtin_graders(),
+        executor_resolver=text_executor_resolver(provider),
         access_service=ChallengeAccessService(reader, InMemorySubmissionRepository()),
     )
 

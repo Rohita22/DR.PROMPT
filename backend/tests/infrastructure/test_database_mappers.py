@@ -2,6 +2,8 @@ import uuid
 
 import pytest
 
+from app.domains.challenges.errors import ChallengeDefinitionError
+from app.domains.challenges.models import ChallengeType
 from app.domains.evaluation.configuration import (
     AllowedLabelGraderConfig,
     ArrayComparisonGraderConfig,
@@ -15,6 +17,7 @@ from app.infrastructure.challenges.in_memory_hidden_test_repository import (
 )
 from app.infrastructure.challenges.in_memory_repository import EXACT_OUTPUT_CHALLENGE
 from app.infrastructure.database.mappers import (
+    challenge_type_from_data,
     grader_config_from_data,
     grader_config_to_data,
     hidden_suite_from_rows,
@@ -51,6 +54,7 @@ def _version_row() -> ChallengeVersionRow:
         model_config=model_config_to_data(version.model_config),
         scoring_config=scoring_config_to_data(version.scoring_config),
         publication_state=version.publication_state.value,
+        challenge_type=version.challenge_type.value,
     )
 
 
@@ -147,3 +151,36 @@ def test_model_and_scoring_configuration_round_trip() -> None:
         scoring_config_from_data(scoring_config_to_data(version.scoring_config))
         == version.scoring_config
     )
+
+    from app.infrastructure.challenges.application_fixtures import RESPONSIVE_HERO_CHALLENGE
+
+    text_data = model_config_to_data(version.model_config)
+    application_data = model_config_to_data(RESPONSIVE_HERO_CHALLENGE.version.model_config)
+    assert "reasoning_effort" not in text_data
+    assert application_data["reasoning_effort"] == "low"
+    assert (
+        model_config_from_data(application_data) == RESPONSIVE_HERO_CHALLENGE.version.model_config
+    )
+
+
+def test_challenge_type_round_trips_and_unknown_values_fail() -> None:
+    assert _version_row().challenge_type == "text"
+    for challenge_type in ChallengeType:
+        assert challenge_type_from_data(challenge_type.value) is challenge_type
+    with pytest.raises(ChallengeDefinitionError, match="quantum"):
+        challenge_type_from_data("quantum")
+
+
+def test_application_config_round_trips_and_text_versions_store_null() -> None:
+    from app.infrastructure.challenges.application_fixtures import RESPONSIVE_HERO_CONFIG
+    from app.infrastructure.database.mappers import (
+        application_config_from_data,
+        application_config_to_data,
+    )
+
+    data = application_config_to_data(RESPONSIVE_HERO_CONFIG)
+    assert data is not None and data["starter_project"] == "responsive-hero"
+    assert application_config_from_data(data) == RESPONSIVE_HERO_CONFIG
+    assert application_config_to_data(None) is None
+    assert application_config_from_data(None) is None
+    assert _version_row().application_config is None

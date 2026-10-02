@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     environment: str = "development"
     cors_origins: list[str] = ["http://localhost:3000"]
+    admin_api_key: SecretStr | None = Field(default=None, validation_alias="ADMIN_API_KEY")
     groq_api_key: SecretStr | None = Field(default=None, validation_alias="GROQ_API_KEY")
     groq_timeout_seconds: float = Field(
         default=30.0,
@@ -32,6 +33,38 @@ class Settings(BaseSettings):
         gt=0,
         validation_alias="SUPABASE_JWKS_TIMEOUT_SECONDS",
     )
+
+    application_sandbox_backend: str = Field(
+        default="disabled",
+        pattern="^(disabled|docker-rootless)$",
+        validation_alias="APPLICATION_SANDBOX_BACKEND",
+    )
+    application_sandbox_image: str = Field(default="", validation_alias="APPLICATION_SANDBOX_IMAGE")
+
+    application_browser_channel: str | None = Field(
+        default=None,
+        validation_alias="APPLICATION_BROWSER_CHANNEL",
+    )
+    application_run_cooldown_seconds: int = Field(
+        default=10,
+        ge=0,
+        validation_alias="APPLICATION_RUN_COOLDOWN_SECONDS",
+    )
+    application_submit_cooldown_seconds: int = Field(
+        default=20,
+        ge=0,
+        validation_alias="APPLICATION_SUBMIT_COOLDOWN_SECONDS",
+    )
+    application_execution_lock_timeout_seconds: int = Field(
+        default=180,
+        gt=0,
+        validation_alias="APPLICATION_EXECUTION_LOCK_TIMEOUT_SECONDS",
+    )
+
+    @field_validator("application_browser_channel", mode="before")
+    @classmethod
+    def empty_browser_channel_is_bundled(cls, value: object) -> object:
+        return None if value in (None, "") else value
 
     @field_validator("database_url", mode="before")
     @classmethod

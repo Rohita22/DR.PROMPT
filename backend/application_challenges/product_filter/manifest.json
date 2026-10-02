@@ -1,0 +1,384 @@
+{
+  "id": "product-filter",
+  "display_name": "Product Filter",
+  "description": "Fix interactive behavior while preserving the existing design and content.",
+  "defaults": {
+    "schema_version": 1,
+    "execution_mode": "sandboxed_executable",
+    "starter_project": "product-filter",
+    "page_source": "index.html",
+    "editable_files": [
+      "src/App.tsx",
+      "src/filter.ts"
+    ],
+    "build_command": [
+      "sandbox",
+      "build"
+    ],
+    "build_output": "dist/index.html",
+    "visible_checks": [
+      "build",
+      "category",
+      "clear",
+      "empty"
+    ],
+    "hidden_checks": [
+      "build",
+      "category",
+      "clear",
+      "empty",
+      "combined",
+      "case_insensitive",
+      "whitespace",
+      "switch_category",
+      "keyboard_clear",
+      "data_preserved",
+      "page_preserved",
+      "protected"
+    ],
+    "viewports": [
+      {
+        "id": "desktop",
+        "width": 1280,
+        "height": 800,
+        "label": "App view",
+        "screenshot": true
+      },
+      {
+        "id": "mobile",
+        "width": 390,
+        "height": 844,
+        "label": "Phone",
+        "screenshot": true
+      }
+    ],
+    "limits": {
+      "agent_timeout_seconds": 90,
+      "build_timeout_seconds": 20,
+      "browser_timeout_seconds": 20,
+      "max_file_bytes": 32000,
+      "max_files": 2,
+      "max_log_chars": 2000
+    }
+  },
+  "checks": [
+    {
+      "id": "build",
+      "implementation": "build_succeeds",
+      "label": "App typechecks and builds",
+      "parameters": {}
+    },
+    {
+      "id": "category",
+      "implementation": "interaction",
+      "label": "Category selection narrows the product list",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "select",
+            "selector": "select",
+            "value": "desk"
+          },
+          {
+            "action": "count",
+            "selector": ".products li",
+            "count": 2
+          },
+          {
+            "action": "text",
+            "selector": ".products li h2",
+            "value": "Desk Lamp|Oak Stand"
+          }
+        ]
+      }
+    },
+    {
+      "id": "clear",
+      "implementation": "interaction",
+      "label": "Clear filters restores all products",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "select",
+            "selector": "select",
+            "value": "paper"
+          },
+          {
+            "action": "fill",
+            "selector": "input",
+            "value": "Notebook"
+          },
+          {
+            "action": "click",
+            "selector": "button"
+          },
+          {
+            "action": "count",
+            "selector": ".products li",
+            "count": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "empty",
+      "implementation": "interaction",
+      "label": "No-results state explains an empty list",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "input",
+            "value": "zzzzzz"
+          },
+          {
+            "action": "count",
+            "selector": ".products li",
+            "count": 0
+          },
+          {
+            "action": "visible",
+            "selector": "[data-testid=empty]"
+          }
+        ]
+      }
+    },
+    {
+      "id": "combined",
+      "implementation": "interaction",
+      "label": "Search and category work together",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "select",
+            "selector": "select",
+            "value": "paper"
+          },
+          {
+            "action": "fill",
+            "selector": "input",
+            "value": "weekly"
+          },
+          {
+            "action": "count",
+            "selector": ".products li",
+            "count": 1
+          },
+          {
+            "action": "text",
+            "selector": ".products h2",
+            "value": "Weekly Planner"
+          }
+        ]
+      }
+    },
+    {
+      "id": "case_insensitive",
+      "implementation": "interaction",
+      "label": "Search ignores letter case",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "input",
+            "value": "nOtEbOoK"
+          },
+          {
+            "action": "count",
+            "selector": ".products li",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "whitespace",
+      "implementation": "interaction",
+      "label": "Search trims surrounding whitespace",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "input",
+            "value": "  lamp  "
+          },
+          {
+            "action": "count",
+            "selector": ".products li",
+            "count": 1
+          },
+          {
+            "action": "text",
+            "selector": ".products h2",
+            "value": "Desk Lamp"
+          }
+        ]
+      }
+    },
+    {
+      "id": "switch_category",
+      "implementation": "interaction",
+      "label": "Switching categories recomputes results",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "select",
+            "selector": "select",
+            "value": "desk"
+          },
+          {
+            "action": "count",
+            "selector": ".products li",
+            "count": 2
+          },
+          {
+            "action": "select",
+            "selector": "select",
+            "value": "carry"
+          },
+          {
+            "action": "count",
+            "selector": ".products li",
+            "count": 2
+          },
+          {
+            "action": "text",
+            "selector": ".products li h2",
+            "value": "Canvas Tote|Travel Pouch"
+          }
+        ]
+      }
+    },
+    {
+      "id": "keyboard_clear",
+      "implementation": "interaction",
+      "label": "Clear filters is keyboard accessible",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "select",
+            "selector": "select",
+            "value": "desk"
+          },
+          {
+            "action": "press",
+            "selector": "button",
+            "value": "Enter"
+          },
+          {
+            "action": "count",
+            "selector": ".products li",
+            "count": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "data_preserved",
+      "implementation": "interaction",
+      "label": "All product names and prices remain unchanged",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "count",
+            "selector": ".products li",
+            "count": 6
+          },
+          {
+            "action": "text",
+            "selector": ".products h2",
+            "value": "Field Notebook|Weekly Planner|Desk Lamp|Oak Stand|Canvas Tote|Travel Pouch"
+          },
+          {
+            "action": "text",
+            "selector": ".products li p",
+            "value": "$12|$24|$48|$32|$28|$18"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page_preserved",
+      "implementation": "interaction",
+      "label": "Unrelated page content stays visible",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "steps": [
+          {
+            "action": "text",
+            "selector": "header strong",
+            "value": "forma / studio"
+          },
+          {
+            "action": "text",
+            "selector": "footer",
+            "value": "Forma Studio \u00b7 Made for everyday progress."
+          }
+        ]
+      }
+    },
+    {
+      "id": "protected",
+      "implementation": "protected_files_unchanged",
+      "label": "Protected files stay unchanged",
+      "parameters": {}
+    }
+  ],
+  "protected_paths": [
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "index.html",
+    "src/main.tsx",
+    "src/styles.css",
+    "src/products.ts"
+  ],
+  "sandbox": {
+    "runtime": "react-typescript-v1",
+    "install_strategy": "prepared_image",
+    "commands": [
+      "typecheck",
+      "build",
+      "browser_tests"
+    ],
+    "generated_paths": [
+      "dist"
+    ],
+    "network": "none",
+    "cpus": 1.0,
+    "memory_mb": 768,
+    "pids": 128,
+    "timeout_seconds": 60,
+    "workspace_mb": 32,
+    "max_output_bytes": 4000000
+  }
+}

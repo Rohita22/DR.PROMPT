@@ -16,6 +16,12 @@ class GraderType(StrEnum):
     ARRAY_COMPARISON = "array_comparison"
 
 
+class ReasoningEffort(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 @dataclass(frozen=True, slots=True)
 class ExactMatchGraderConfig:
     grader_type: GraderType = field(default=GraderType.EXACT_MATCH, init=False)
@@ -97,6 +103,7 @@ class ModelConfiguration:
     max_output_tokens: int
     configuration_version: str
     system_wrapper: str | None = None
+    reasoning_effort: ReasoningEffort | None = None
 
     def __post_init__(self) -> None:
         model_id = self.model_id.strip()

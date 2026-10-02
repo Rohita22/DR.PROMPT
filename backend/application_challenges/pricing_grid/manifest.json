@@ -1,0 +1,302 @@
+{
+  "id": "pricing-grid",
+  "display_name": "Pricing Grid",
+  "description": "Shape three pricing plans into a responsive grid and make Pro stand out, while preserving the page content.",
+  "protected_paths": [
+    "build.mjs"
+  ],
+  "defaults": {
+    "schema_version": 1,
+    "starter_project": "pricing-grid",
+    "page_source": "src/index.html",
+    "editable_files": [
+      "src/index.html",
+      "src/styles.css"
+    ],
+    "build_command": [
+      "node",
+      "build.mjs"
+    ],
+    "build_output": "dist/index.html",
+    "visible_checks": [
+      "build",
+      "desktop_cards",
+      "featured_plan",
+      "mobile_no_overflow"
+    ],
+    "hidden_checks": [
+      "build",
+      "desktop_cards",
+      "featured_plan",
+      "mobile_no_overflow",
+      "plan_names",
+      "plan_prices",
+      "actions_clickable",
+      "cards_stacked",
+      "header_unchanged",
+      "footer_unchanged",
+      "pricing_structure",
+      "protected_files_unchanged",
+      "small_no_overflow",
+      "plan_features",
+      "action_destinations"
+    ],
+    "viewports": [
+      {
+        "id": "desktop",
+        "width": 1280,
+        "height": 800,
+        "label": "Desktop",
+        "screenshot": true
+      },
+      {
+        "id": "wide",
+        "width": 1440,
+        "height": 900,
+        "label": "Wide desktop",
+        "screenshot": false
+      },
+      {
+        "id": "mobile",
+        "width": 390,
+        "height": 844,
+        "label": "Phone",
+        "screenshot": true
+      },
+      {
+        "id": "small",
+        "width": 320,
+        "height": 640,
+        "label": "Narrow phone",
+        "screenshot": false
+      }
+    ],
+    "limits": {
+      "agent_timeout_seconds": 90.0,
+      "build_timeout_seconds": 20.0,
+      "browser_timeout_seconds": 20.0,
+      "max_file_bytes": 32000,
+      "max_files": 2,
+      "max_log_chars": 2000
+    }
+  },
+  "checks": [
+    {
+      "id": "build",
+      "implementation": "build_succeeds",
+      "label": "Project builds",
+      "parameters": {}
+    },
+    {
+      "id": "desktop_cards",
+      "implementation": "horizontal_row",
+      "label": "Three pricing cards share a desktop row",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "selectors": [
+          "[data-plan]"
+        ],
+        "count": 3,
+        "min_width_ratio": 0.2
+      }
+    },
+    {
+      "id": "featured_plan",
+      "implementation": "element_prominent",
+      "label": "Pro has a distinct background or border",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "selectors": [
+          "[data-plan=\"pro\"]",
+          "[data-plan]:not([data-plan=\"pro\"])"
+        ],
+        "count": 3
+      }
+    },
+    {
+      "id": "mobile_no_overflow",
+      "implementation": "no_horizontal_overflow",
+      "label": "No horizontal overflow at 390px",
+      "parameters": {
+        "viewports": [
+          "mobile"
+        ]
+      }
+    },
+    {
+      "id": "plan_names",
+      "implementation": "text_preserved",
+      "label": "Original plan names preserved",
+      "parameters": {
+        "viewports": [
+          "desktop",
+          "mobile"
+        ],
+        "selectors": [
+          "[data-plan-name]"
+        ],
+        "count": 3,
+        "texts": [
+          "Starter",
+          "Pro",
+          "Business"
+        ]
+      }
+    },
+    {
+      "id": "plan_prices",
+      "implementation": "text_preserved",
+      "label": "Original prices preserved",
+      "parameters": {
+        "viewports": [
+          "desktop",
+          "mobile"
+        ],
+        "selectors": [
+          "[data-price]"
+        ],
+        "count": 3,
+        "texts": [
+          "$9 / month",
+          "$29 / month",
+          "$79 / month"
+        ]
+      }
+    },
+    {
+      "id": "actions_clickable",
+      "implementation": "element_clickable",
+      "label": "All plan actions remain clickable",
+      "parameters": {
+        "viewports": [
+          "desktop",
+          "mobile"
+        ],
+        "selectors": [
+          "[data-plan] a[data-action]"
+        ],
+        "count": 3
+      }
+    },
+    {
+      "id": "cards_stacked",
+      "implementation": "vertical_stack",
+      "label": "Cards stack on narrow phones",
+      "parameters": {
+        "viewports": [
+          "mobile",
+          "small"
+        ],
+        "selectors": [
+          "[data-plan]"
+        ],
+        "count": 3,
+        "min_width_ratio": 0.6,
+        "max_width_ratio": 1.0
+      }
+    },
+    {
+      "id": "header_unchanged",
+      "implementation": "protected_markup_unchanged",
+      "label": "Header unchanged",
+      "parameters": {
+        "tags": [
+          "header"
+        ]
+      }
+    },
+    {
+      "id": "footer_unchanged",
+      "implementation": "protected_markup_unchanged",
+      "label": "Footer unchanged",
+      "parameters": {
+        "tags": [
+          "footer"
+        ]
+      }
+    },
+    {
+      "id": "pricing_structure",
+      "implementation": "required_structure",
+      "label": "Pricing section and plan structure preserved",
+      "parameters": {
+        "viewports": [
+          "desktop"
+        ],
+        "selectors": [
+          "main section[data-role=\"pricing\"]",
+          "[data-plan=\"starter\"]",
+          "[data-plan=\"pro\"]",
+          "[data-plan=\"business\"]",
+          "h1"
+        ]
+      }
+    },
+    {
+      "id": "protected_files_unchanged",
+      "implementation": "protected_files_unchanged",
+      "label": "Protected files unchanged",
+      "parameters": {}
+    },
+    {
+      "id": "small_no_overflow",
+      "implementation": "no_horizontal_overflow",
+      "label": "No horizontal overflow at 320px",
+      "parameters": {
+        "viewports": [
+          "small"
+        ]
+      }
+    },
+    {
+      "id": "plan_features",
+      "implementation": "text_preserved",
+      "label": "Original plan features preserved",
+      "parameters": {
+        "viewports": [
+          "desktop",
+          "mobile"
+        ],
+        "selectors": [
+          "[data-plan] li"
+        ],
+        "count": 9,
+        "texts": [
+          "3 active projects",
+          "Essential templates",
+          "Community support",
+          "Unlimited projects",
+          "Advanced templates",
+          "Priority support",
+          "Everything in Pro",
+          "Team workspaces",
+          "Dedicated support"
+        ]
+      }
+    },
+    {
+      "id": "action_destinations",
+      "implementation": "link_destinations",
+      "label": "Original plan actions preserved",
+      "parameters": {
+        "viewports": [
+          "desktop",
+          "mobile"
+        ],
+        "selectors": [
+          "[data-plan] a[data-action]"
+        ],
+        "count": 3,
+        "texts": [
+          "#start-starter",
+          "#start-pro",
+          "#start-business"
+        ]
+      }
+    }
+  ]
+}

@@ -1,9 +1,12 @@
 from collections.abc import Mapping
 from typing import cast
 
+from app.domains.application.models import ApplicationChallengeConfig
+from app.domains.challenges.errors import ChallengeDefinitionError
 from app.domains.challenges.models import (
     Challenge,
     ChallengeTrack,
+    ChallengeType,
     ChallengeVersion,
     Difficulty,
     PlayableChallenge,
@@ -21,6 +24,7 @@ from app.domains.evaluation.configuration import (
     GraderType,
     JsonSchemaGraderConfig,
     ModelConfiguration,
+    ReasoningEffort,
 )
 from app.domains.evaluation.test_cases import HiddenTestCase, HiddenTestSuite, VisibleTestCase
 from app.domains.scoring.configuration import (
@@ -29,6 +33,8 @@ from app.domains.scoring.configuration import (
     ScoringConfiguration,
     StarThresholds,
 )
+from app.infrastructure.application.configuration import config_from_data, config_to_data
+from app.infrastructure.application.starter_projects import StarterProjectRepository
 from app.infrastructure.database.models import (
     ChallengeRow,
     ChallengeVersionRow,
@@ -36,6 +42,31 @@ from app.infrastructure.database.models import (
     VisibleExampleRow,
     VisibleTestCaseRow,
 )
+
+
+def challenge_type_from_data(value: str) -> ChallengeType:
+    try:
+        return ChallengeType(value)
+    except ValueError:
+        raise ChallengeDefinitionError(f"Unknown challenge type '{value}'.") from None
+
+
+def application_config_to_data(
+    config: ApplicationChallengeConfig | None,
+) -> dict[str, object] | None:
+    if config is None:
+        return None
+    return config_to_data(config)
+
+
+def application_config_from_data(
+    data: Mapping[str, object] | None,
+) -> ApplicationChallengeConfig | None:
+    if data is None:
+        return None
+    config = config_from_data(data)
+    StarterProjectRepository().validate(config)
+    return config
 
 
 def grader_config_to_data(config: GraderConfiguration) -> dict[str, object]:
@@ -67,13 +98,16 @@ def grader_config_from_data(data: Mapping[str, object]) -> GraderConfiguration:
 
 
 def model_config_to_data(config: ModelConfiguration) -> dict[str, object]:
-    return {
+    data: dict[str, object] = {
         "model_id": config.model_id,
         "temperature": config.temperature,
         "max_output_tokens": config.max_output_tokens,
         "configuration_version": config.configuration_version,
         "system_wrapper": config.system_wrapper,
     }
+    if config.reasoning_effort is not None:
+        data["reasoning_effort"] = config.reasoning_effort.value
+    return data
 
 
 def model_config_from_data(data: Mapping[str, object]) -> ModelConfiguration:
@@ -83,6 +117,9 @@ def model_config_from_data(data: Mapping[str, object]) -> ModelConfiguration:
         max_output_tokens=int(data["max_output_tokens"]),
         configuration_version=str(data["configuration_version"]),
         system_wrapper=(str(data["system_wrapper"]) if data.get("system_wrapper") else None),
+        reasoning_effort=(
+            ReasoningEffort(str(data["reasoning_effort"])) if data.get("reasoning_effort") else None
+        ),
     )
 
 
@@ -169,6 +206,8 @@ def playable_challenge_from_rows(
             scoring_config=scoring_config_from_data(version.scoring_config),
             model_config=model_config_from_data(version.model_config),
             publication_state=PublicationState(version.publication_state),
+            challenge_type=challenge_type_from_data(version.challenge_type),
+            application_config=application_config_from_data(version.application_config),
         ),
     )
 

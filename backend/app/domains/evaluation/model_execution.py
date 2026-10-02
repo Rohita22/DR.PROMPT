@@ -1,8 +1,26 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from app.domains.evaluation.configuration import ModelConfiguration
 from app.domains.evaluation.errors import EvaluationConfigurationError
 from app.domains.evaluation.types import EvaluationValue
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredOutputSpecification:
+    """Provider-neutral JSON Schema response contract for one LLM request."""
+
+    name: str
+    schema: Mapping[str, EvaluationValue]
+    strict: bool = True
+
+    def __post_init__(self) -> None:
+        name = self.name.strip()
+        if not name:
+            raise EvaluationConfigurationError("Structured output name cannot be blank.")
+        if not self.schema:
+            raise EvaluationConfigurationError("Structured output schema cannot be empty.")
+        object.__setattr__(self, "name", name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,6 +30,7 @@ class LLMExecutionRequest:
     player_prompt: str
     test_input: EvaluationValue
     model_config: ModelConfiguration
+    structured_output: StructuredOutputSpecification | None = None
 
     def __post_init__(self) -> None:
         if not self.player_prompt.strip():

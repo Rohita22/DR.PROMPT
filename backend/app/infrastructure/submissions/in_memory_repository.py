@@ -1,6 +1,7 @@
 import asyncio
 from uuid import uuid4
 
+from app.application.challenges.models import ApplicationSubmitResult
 from app.domains.challenges.models import Difficulty
 from app.domains.progression import (
     ProgressionResult,
@@ -79,6 +80,40 @@ class InMemorySubmissionRepository:
                 if transaction.user_id == submission.user_id
             )
             return ProgressionResult(progress, awards, total_xp)
+
+    async def save_application_with_progression(
+        self,
+        submission: Submission,
+        *,
+        difficulty: Difficulty,
+        xp_configuration: XPRewardConfiguration,
+        reservation_id: str,
+        result: ApplicationSubmitResult,
+    ) -> ApplicationSubmitResult:
+        del reservation_id
+        progression = await self.save_with_progression(
+            submission,
+            difficulty=difficulty,
+            xp_configuration=xp_configuration,
+        )
+        return ApplicationSubmitResult(
+            challenge_slug=result.challenge_slug,
+            challenge_version_id=result.challenge_version_id,
+            passed_count=result.passed_count,
+            total_count=result.total_count,
+            evaluation_score=result.evaluation_score,
+            prompt_tokens=result.prompt_tokens,
+            efficiency=result.efficiency,
+            final_score=result.final_score,
+            stars=result.stars,
+            xp_earned=progression.xp_earned,
+            total_xp=progression.total_xp,
+            best_score=progression.progress.best_score,
+            best_stars=progression.progress.best_stars,
+            completed=progression.progress.completed_at is not None,
+            agent_status=result.agent_status,
+            screenshot=result.screenshot,
+        )
 
     def awarded_reasons(self, user_id: str, challenge_id: str) -> set[XPAwardReason]:
         return {

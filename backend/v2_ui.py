@@ -1,0 +1,27 @@
+from pathlib import Path
+p=Path('app/api/routes/challenges.py');s=p.read_text(encoding='utf-8').replace('from app.domains.auth import','from app.domains.application.sandbox import ApplicationSandbox\nfrom app.domains.auth import').replace('sandbox=Depends(get_application_sandbox),','sandbox: Annotated[ApplicationSandbox, Depends(get_application_sandbox)],');p.write_text(s,encoding='utf-8')
+p=Path('app/api/schemas/admin.py');s=p.read_text(encoding='utf-8').replace('__import__("dataclasses").asdict','asdict');s='from dataclasses import asdict\n'+s;p.write_text(s,encoding='utf-8')
+p=Path('app/api/dependencies.py');s=p.read_text(encoding='utf-8');s+='''
+
+def get_package_health(settings: Annotated[Settings, Depends(get_settings)]):
+    from app.application.admin.package_health import ApplicationPackageHealth
+    packages = StarterProjectRepository()
+    return ApplicationPackageHealth(packages, LocalWorkspaceFactory(packages),
+                                    configured_sandbox(settings),
+                                    PlaywrightApplicationEvaluator(settings.application_browser_channel))
+''';p.write_text(s,encoding='utf-8')
+p=Path('app/api/routes/admin.py');s=p.read_text(encoding='utf-8').replace('    get_admin_challenge_use_case,','    get_admin_challenge_use_case,\n    get_package_health,');s='from app.application.admin.package_health import ApplicationPackageHealth\n'+s;s+='''
+
+@router.post("/application-packages/{package_id}/health")
+async def package_health(package_id: str,
+                         use_case: Annotated[ApplicationPackageHealth, Depends(get_package_health)]):
+    return await use_case.execute(package_id)
+''';p.write_text(s,encoding='utf-8')
+p=Path('tests/api/test_application_api.py');s=p.read_text(encoding='utf-8').replace('"starter_preview_viewports": ["desktop", "mobile"],','"starter_preview_viewports": ["desktop", "mobile"],\n        "execution_mode": "static",\n        "available": True,');p.write_text(s,encoding='utf-8')
+p=Path('tests/application/test_admin_application.py');s=p.read_text(encoding='utf-8').replace('["responsive-hero", "pricing-grid"]','["responsive-hero", "pricing-grid", "broken-signup-validation", "product-filter"]');p.write_text(s,encoding='utf-8')
+p=Path('../frontend/src/features/admin/application-types.ts');s=p.read_text(encoding='utf-8').replace('export type ApplicationPackage = {','export type ApplicationPackage = { execution_mode?: "static" | "sandboxed_executable"; runtime_metadata?: { runtime: string; commands: string[]; network: string; cpus: number; memory_mb: number; pids: number; timeout_seconds: number; workspace_mb: number } | null;');p.write_text(s,encoding='utf-8')
+p=Path('../frontend/src/lib/api/challenges.ts');s=p.read_text(encoding='utf-8').replace('application: { editable_files:', 'application: { execution_mode?: "static" | "sandboxed_executable"; available?: boolean; editable_files:');p.write_text(s,encoding='utf-8')
+p=Path('../frontend/src/features/challenge/challenge-harness.tsx');s=p.read_text(encoding='utf-8').replace('disabled={busy !== null || applicationCooldown || !prompt.trim()}', 'disabled={busy !== null || applicationCooldown || application?.available === false || !prompt.trim()}');s=s.replace('<div className="action-group"><button className="run-button"','{application?.available === false ? <p className="sandbox-notice" role="status">Executable challenges aren’t available on this server right now.</p> : null}\n            <div className="action-group"><button className="run-button"');s=s.replace('application !== null ? <StarterPreview','application !== null ? <StarterPreview');# screenshots missing runtime not render broken images
+s=s.replace('src={starterSrc} title={challenge.title}', 'src={application.available === false ? "" : starterSrc} title={challenge.title}');p.write_text(s,encoding='utf-8')
+p=Path('../frontend/src/features/challenge/application-results.tsx');s=p.read_text(encoding='utf-8').replace('<img src={src} alt={`${title} starter before any changes`} loading="lazy" />','{src ? <img src={src} alt={`${title} starter before any changes`} loading="lazy" /> : <div className="shot-empty">App preview becomes available when executable challenges are enabled.</div>}');p.write_text(s,encoding='utf-8')
+p=Path('../frontend/src/features/admin/application-editor.tsx');s=p.read_text(encoding='utf-8');s=s.replace('{pkg && value ? <><p', '{pkg && value ? <><p className="admin-help"><strong>{pkg.execution_mode === "sandboxed_executable" ? "Sandboxed Executable" : "Static HTML / CSS"}</strong></p>{pkg.runtime_metadata ? <div className="runtime-policy"><h3>Trusted runtime policy</h3><p>{pkg.runtime_metadata.runtime} · Network disabled</p><p>{pkg.runtime_metadata.cpus} CPU · {pkg.runtime_metadata.memory_mb} MB memory · {pkg.runtime_metadata.pids} processes · {pkg.runtime_metadata.timeout_seconds}s maximum</p><p>Commands: {pkg.runtime_metadata.commands.join(" → ")}</p><small>Runtime policy is maintained in the repository.</small></div> : null}<p');s=s.replace('<img src={`/api/admin/application-packages/${pkg.id}/preview/${v.id}.png`} alt={`${pkg.display_name} starter at ${v.width}px`} />','{pkg.execution_mode === "sandboxed_executable" ? <div className="shot-empty">Interactive React / TypeScript app. Use package health to verify the runtime before testing.</div> : <img src={`/api/admin/application-packages/${pkg.id}/preview/${v.id}.png`} alt={`${pkg.display_name} starter at ${v.width}px`} />}');p.write_text(s,encoding='utf-8')

@@ -21,5 +21,5 @@ export async function GET(request: Request) {
       // Redirect with a safe state; no provider or token detail enters the URL.
     }
   }
-  return NextResponse.redirect(new URL("/?auth_error=oauth_callback_failed", url.origin));
+  return NextResponse.redirect(new URL("/login?auth_error=authentication_callback_failed", url.origin));
 }

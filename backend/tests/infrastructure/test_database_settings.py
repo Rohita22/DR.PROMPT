@@ -46,3 +46,24 @@ def test_supabase_auth_configuration_accepts_public_project_url() -> None:
     )
 
     assert str(settings.supabase_url).rstrip("/") == "https://project-ref.supabase.co"
+
+
+def test_application_execution_guard_defaults_and_overrides_are_centralized() -> None:
+    defaults = Settings(_env_file=None)
+    configured = Settings(
+        APPLICATION_RUN_COOLDOWN_SECONDS=3,
+        APPLICATION_SUBMIT_COOLDOWN_SECONDS=9,
+        APPLICATION_EXECUTION_LOCK_TIMEOUT_SECONDS=120,
+        _env_file=None,
+    )
+
+    assert (
+        defaults.application_run_cooldown_seconds,
+        defaults.application_submit_cooldown_seconds,
+        defaults.application_execution_lock_timeout_seconds,
+    ) == (10, 20, 180)
+    assert (
+        configured.application_run_cooldown_seconds,
+        configured.application_submit_cooldown_seconds,
+        configured.application_execution_lock_timeout_seconds,
+    ) == (3, 9, 120)

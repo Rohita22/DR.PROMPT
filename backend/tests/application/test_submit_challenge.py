@@ -13,7 +13,6 @@ from app.application.challenges.submit_challenge import SubmitChallengeUseCase
 from app.core.exceptions import LLMProviderError, PersistenceError
 from app.domains.challenges.errors import ChallengeNotFoundError
 from app.domains.challenges.models import PlayableChallenge
-from app.domains.evaluation.engine import EvaluationEngine
 from app.domains.evaluation.errors import (
     HiddenTestSuiteNotFoundError,
     HiddenTestSuiteVersionMismatchError,
@@ -37,6 +36,7 @@ from app.infrastructure.challenges.in_memory_repository import (
     InMemoryChallengeRepository,
 )
 from app.infrastructure.submissions import InMemorySubmissionRepository
+from tests.fakes.execution import text_executor_resolver
 from tests.fakes.llm import FakeLLMProvider
 from tests.fakes.tokenization import FakePromptTokenCounter
 
@@ -89,9 +89,10 @@ def submit_use_case(
     progression_repository = submission_repository or InMemorySubmissionRepository()
     return SubmitChallengeUseCase(
         challenge_reader=challenge_reader,
-        hidden_test_suite_reader=hidden_reader,
-        llm_provider=provider,
-        evaluation_engine=EvaluationEngine.with_builtin_graders(),
+        executor_resolver=text_executor_resolver(
+            provider,
+            hidden_reader,
+        ),
         prompt_token_counter=token_counter or FakePromptTokenCounter(42),
         scoring_service=ScoringService(),
         submission_repository=progression_repository,
@@ -452,11 +453,10 @@ def test_submit_persistence_failure_prevents_false_success() -> None:
         asyncio.run(
             SubmitChallengeUseCase(
                 challenge_reader=challenge_reader,
-                hidden_test_suite_reader=TrackingHiddenTestSuiteReader(
-                    EXACT_OUTPUT_HIDDEN_TEST_SUITE
+                executor_resolver=text_executor_resolver(
+                    provider,
+                    TrackingHiddenTestSuiteReader(EXACT_OUTPUT_HIDDEN_TEST_SUITE),
                 ),
-                llm_provider=provider,
-                evaluation_engine=EvaluationEngine.with_builtin_graders(),
                 prompt_token_counter=FakePromptTokenCounter(42),
                 scoring_service=ScoringService(),
                 submission_repository=repository,

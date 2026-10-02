@@ -1,0 +1,23 @@
+* { box-sizing: border-box; }
+body { margin: 0; color: #202921; background: #f7f7f0; font-family: Arial, sans-serif; }
+a { color: inherit; }
+.site-header { min-height: 80px; padding: 24px 5%; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #d8ddcf; }
+.brand { font-size: 28px; font-weight: 800; letter-spacing: -2px; text-decoration: none; }
+.brand span { font-size: 12px; vertical-align: top; letter-spacing: 0; }
+nav { display: flex; gap: 24px; font-size: 13px; }
+nav a { text-decoration: none; }
+.pricing { padding: 48px 5%; }
+.section-intro { margin-bottom: 32px; }
+.eyebrow, .plan-index { font-size: 11px; font-weight: 700; letter-spacing: 2px; }
+h1 { margin: 16px 0; font-size: 44px; line-height: 1; letter-spacing: -2px; }
+.section-intro > p:last-child { color: #60695e; font-size: 15px; }
+.plans { display: block; }
+.plan { width: 600px; margin-bottom: 18px; padding: 24px; background: #eceee4; border: 1px solid #d8ddcf; }
+h2 { font-size: 24px; margin: 18px 0 12px; }
+.plan-description { font-size: 14px; color: #60695e; }
+.price { font-size: 28px; font-weight: 700; margin: 24px 0; letter-spacing: -1px; }
+ul { list-style: none; padding: 0; font-size: 13px; line-height: 2; }
+li::before { content: '✓'; margin-right: 10px; }
+.plan-action { display: flex; justify-content: space-between; padding: 14px 16px; margin-top: 24px; border: 1px solid #8c9984; text-decoration: none; font-size: 13px; font-weight: 700; }
+.pricing-note { margin-top: 24px; font-size: 12px; color: #60695e; }
+.site-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; padding: 28px 5%; border-top: 1px solid #d8ddcf; font-size: 12px; }

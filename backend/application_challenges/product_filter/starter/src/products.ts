@@ -1,0 +1,1 @@
+export const products=[{id:1,name:'Field Notebook',category:'paper',price:12},{id:2,name:'Weekly Planner',category:'paper',price:24},{id:3,name:'Desk Lamp',category:'desk',price:48},{id:4,name:'Oak Stand',category:'desk',price:32},{id:5,name:'Canvas Tote',category:'carry',price:28},{id:6,name:'Travel Pouch',category:'carry',price:18}];
